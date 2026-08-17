@@ -2,9 +2,10 @@ import { MSG, sendToBackground } from "../shared/messaging.js";
 import { parseKeywordList } from "../shared/keyword-filter.js";
 import { getSettings } from "../shared/storage.js";
 import { STORAGE_KEYS } from "../shared/constants.js";
-import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, thresholdToLevelKey, levelKeyToThreshold } from "../shared/sensitivity.js";
+import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK } from "../shared/sensitivity.js";
 
 const intentEl = document.getElementById("intent");
+const avoidEl = document.getElementById("avoid");
 const includeEl = document.getElementById("include");
 const excludeEl = document.getElementById("exclude");
 const sensitivityEl = document.getElementById("sensitivity");
@@ -37,9 +38,10 @@ function renderSensitivity() {
 async function loadSettings() {
   const settings = await getSettings();
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
+  avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
   includeEl.value = (settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []).join(", ");
   excludeEl.value = (settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []).join(", ");
-  selectedLevel = thresholdToLevelKey(settings[STORAGE_KEYS.THRESHOLD]);
+  selectedLevel = kToLevelKey(settings[STORAGE_KEYS.SENSITIVITY_K]);
   renderSensitivity();
 }
 
@@ -49,7 +51,8 @@ saveBtn.addEventListener("click", async () => {
   try {
     const response = await sendToBackground(MSG.SAVE_SETTINGS, {
       intent: intentEl.value.trim(),
-      threshold: levelKeyToThreshold(selectedLevel),
+      avoidIntent: avoidEl.value.trim(),
+      sensitivityK: levelKeyToK(selectedLevel),
       includeKeywords: parseKeywordList(includeEl.value),
       excludeKeywords: parseKeywordList(excludeEl.value),
     });

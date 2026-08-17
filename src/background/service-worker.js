@@ -1,6 +1,8 @@
-import { MSG, onMessage } from "../shared/messaging.js";
+import { MSG, onMessage, sendToOffscreen } from "../shared/messaging.js";
 import { getSettings, setSettings, getScoreCache, clearScoreCache, setScoreCache } from "../shared/storage.js";
 import { STORAGE_KEYS } from "../shared/constants.js";
+import { computeCalibration } from "../shared/scoring.js";
+import { PROBE_TITLES } from "../shared/probe-titles.js";
 
 const OFFSCREEN_PATH = "offscreen/offscreen.html";
 
@@ -14,12 +16,10 @@ async function ensureOffscreenDocument() {
   });
 }
 
-function sendToOffscreen(type, payload) {
-  return chrome.runtime.sendMessage({ type, payload });
-}
-
 // Relay model lifecycle events from the offscreen document out to whichever
-// tabs/pages care (options page, active YouTube tabs).
+// tabs/pages care (options page, active YouTube tabs). These are
+// intentionally untargeted broadcasts, unlike sendToOffscreen's
+// request/response traffic below.
 chrome.runtime.onMessage.addListener((message) => {
   if (
     message &&
@@ -31,6 +31,37 @@ chrome.runtime.onMessage.addListener((message) => {
   }
 });
 
+/**
+ * Embeds `text` via the offscreen document and returns the vector, or null
+ * if `text` is empty. Throws the offscreen error string on failure so the
+ * caller's catch can turn it into a sendResponse({ ok: false }).
+ */
+async function embedText(text) {
+  if (!text) return null;
+  const response = await sendToOffscreen(MSG.EMBED_INTENT, { text });
+  if (!response || !response.ok) {
+    throw new Error((response && response.error) || "embedding failed");
+  }
+  return response.vector;
+}
+
+/**
+ * Scores the fixed probe title set against the new intent/avoid vectors and
+ * fits a { mean, std } over the results — the absolute cutoff for this
+ * intent is derived from this later (mean + k * std). One-time cost per
+ * save, not per scroll batch.
+ */
+async function calibrate(intentVector, avoidVector) {
+  if (!intentVector) return null;
+  const response = await sendToOffscreen(MSG.SCORE_BATCH, {
+    intentVector,
+    avoidVector,
+    videos: PROBE_TITLES.map((title, i) => ({ videoId: `probe-${i}`, title })),
+  });
+  if (!response || !response.ok || response.results.length === 0) return null;
+  return computeCalibration(response.results.map((r) => r.score));
+}
+
 onMessage((type, payload, sender, sendResponse) => {
   if (type === MSG.SCORE_BATCH) {
     (async () => {
@@ -38,12 +69,14 @@ onMessage((type, payload, sender, sendResponse) => {
         await ensureOffscreenDocument();
         const settings = await getSettings();
         const intentVector = settings[STORAGE_KEYS.INTENT_VECTOR];
+        const avoidVector = settings[STORAGE_KEYS.AVOID_VECTOR];
         if (!intentVector) {
           sendResponse({ ok: false, error: "No intent set yet." });
           return;
         }
         const response = await sendToOffscreen(MSG.SCORE_BATCH, {
           intentVector,
+          avoidVector,
           videos: payload.videos,
         });
         if (!response || !response.ok) {
@@ -56,7 +89,7 @@ onMessage((type, payload, sender, sendResponse) => {
           cache[r.videoId] = { score: r.score, version };
         }
         await setScoreCache(cache);
-        sendResponse({ ok: true, results: response.results });
+        sendResponse({ ok: true, results: response.results, failedCount: response.failedCount });
       } catch (err) {
         sendResponse({ ok: false, error: String(err) });
       }
@@ -69,27 +102,32 @@ onMessage((type, payload, sender, sendResponse) => {
       try {
         const prev = await getSettings();
         const intentChanged = payload.intent !== prev[STORAGE_KEYS.INTENT_TEXT];
+        const avoidChanged = (payload.avoidIntent || "") !== (prev[STORAGE_KEYS.AVOID_TEXT] || "");
 
         let vector = prev[STORAGE_KEYS.INTENT_VECTOR];
+        let avoidVector = prev[STORAGE_KEYS.AVOID_VECTOR] || null;
         let version = prev[STORAGE_KEYS.INTENT_VERSION];
+        let calibration = prev[STORAGE_KEYS.CALIBRATION] || null;
 
-        if (intentChanged) {
+        if (intentChanged || avoidChanged) {
           await ensureOffscreenDocument();
-          const embedResponse = await sendToOffscreen(MSG.EMBED_INTENT, { text: payload.intent });
-          if (!embedResponse || !embedResponse.ok) {
-            sendResponse({ ok: false, error: embedResponse && embedResponse.error });
-            return;
-          }
-          vector = embedResponse.vector;
+          if (intentChanged) vector = await embedText(payload.intent);
+          if (avoidChanged) avoidVector = await embedText(payload.avoidIntent);
+
           version = (version || 0) + 1;
           await clearScoreCache();
+          const fit = vector ? await calibrate(vector, avoidVector) : null;
+          calibration = fit ? { ...fit, version } : null;
         }
 
         await setSettings({
           [STORAGE_KEYS.INTENT_TEXT]: payload.intent,
           [STORAGE_KEYS.INTENT_VECTOR]: vector,
+          [STORAGE_KEYS.AVOID_TEXT]: payload.avoidIntent || "",
+          [STORAGE_KEYS.AVOID_VECTOR]: avoidVector,
           [STORAGE_KEYS.INTENT_VERSION]: version,
-          [STORAGE_KEYS.THRESHOLD]: payload.threshold,
+          [STORAGE_KEYS.CALIBRATION]: calibration,
+          [STORAGE_KEYS.SENSITIVITY_K]: payload.sensitivityK,
           [STORAGE_KEYS.INCLUDE_KEYWORDS]: payload.includeKeywords,
           [STORAGE_KEYS.EXCLUDE_KEYWORDS]: payload.excludeKeywords,
         });
@@ -103,7 +141,7 @@ onMessage((type, payload, sender, sendResponse) => {
   }
 
   return undefined;
-});
+}, { target: "background" });
 
 // The review popup only makes sense on a YouTube tab. Everywhere else,
 // clicking the toolbar icon should jump straight to Settings instead of

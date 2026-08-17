@@ -37,6 +37,24 @@ const NESTED_AD_SLOT_HTML = `
 </ytd-rich-item-renderer>
 `;
 
+const SHORTS_FIXTURE_HTML = `
+<ytd-rich-item-renderer>
+  <div id="content">
+    <a id="thumbnail" href="/shorts/shortsId123"></a>
+    <div id="meta">
+      <a id="video-title-link" href="/shorts/shortsId123">
+        <yt-formatted-string id="video-title" title="Quick recipe hack">
+          Quick recipe hack
+        </yt-formatted-string>
+      </a>
+      <ytd-channel-name>
+        <a><yt-formatted-string id="text">Some Cooking Channel</yt-formatted-string></a>
+      </ytd-channel-name>
+    </div>
+  </div>
+</ytd-rich-item-renderer>
+`;
+
 // Current "Lockup View Model" markup — no #video-title id, classes instead.
 const LOCKUP_FIXTURE_HTML = `
 <ytd-rich-item-renderer>
@@ -80,6 +98,17 @@ test("extractCard: skips ad slots", () => {
 test("extractCard: skips cards with a nested ad slot renderer", () => {
   const card = parse(NESTED_AD_SLOT_HTML);
   assert.equal(extractCard(card), null);
+});
+
+test("extractCard: extracts a Shorts card from a /shorts/ href, marked isShort", () => {
+  const card = parse(SHORTS_FIXTURE_HTML);
+  const result = extractCard(card);
+  assert.deepEqual(result, {
+    videoId: "shortsId123",
+    title: "Quick recipe hack",
+    channel: "Some Cooking Channel",
+    isShort: true,
+  });
 });
 
 test("extractCard: extracts from the current Lockup View Model markup", () => {

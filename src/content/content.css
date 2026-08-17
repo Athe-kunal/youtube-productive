@@ -1,3 +1,30 @@
+/* Cards stay in the grid layout when hidden (never display:none) — removing
+ * a card from layout shrinks the grid's measured fill, which makes
+ * ytd-rich-grid-renderer request more items and re-triggers the observer
+ * in a runaway refill loop. Keeping the box present and opaque avoids that
+ * entirely while still making the content unreadable. */
 .yif-dimmed {
-  display: none !important;
+  position: relative;
+  pointer-events: none;
+}
+
+/* visibility:hidden (not opacity) on the content itself guarantees nothing
+ * is legible and stops thumbnail images from being decoded/painted. */
+.yif-dimmed > * {
+  visibility: hidden;
+}
+
+/* Opaque plate occupying the card's box. */
+.yif-dimmed::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--yt-spec-badge-chip-background, #f2f2f2);
+  border-radius: 12px;
+}
+
+@media (prefers-color-scheme: dark) {
+  .yif-dimmed::after {
+    background: #212121;
+  }
 }

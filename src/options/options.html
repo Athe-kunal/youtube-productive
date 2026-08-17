@@ -10,12 +10,23 @@
       <h1>YouTube Intent Filter</h1>
       <p class="subtitle">Describe what you want to see. Everything runs on-device.</p>
 
-      <label for="intent">Intent</label>
+      <label for="intent">Show me</label>
       <textarea
         id="intent"
         rows="4"
-        placeholder="AI research, systems, distributed training — no football, no drama"
+        placeholder="AI research, systems, distributed training"
       ></textarea>
+
+      <label for="avoid">Avoid (optional, described in words)</label>
+      <textarea
+        id="avoid"
+        rows="2"
+        placeholder="football, celebrity drama"
+      ></textarea>
+      <p class="hint">
+        Put things to avoid here, not in the "Show me" box — embedding models don't understand
+        "no X", so writing it into the intent tends to surface more of X, not less.
+      </p>
 
       <label>Sensitivity</label>
       <div id="sensitivity" class="segmented"></div>

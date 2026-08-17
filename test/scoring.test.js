@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cosineSimilarity, percentileCutoff } from "../src/shared/scoring.js";
+import { cosineSimilarity, computeCalibration, calibratedCutoff } from "../src/shared/scoring.js";
 import { resolveDecision, parseKeywordList } from "../src/shared/keyword-filter.js";
 
 test("cosineSimilarity: identical vectors -> 1", () => {
@@ -19,28 +19,31 @@ test("cosineSimilarity: zero vector -> 0, no NaN", () => {
   assert.equal(cosineSimilarity([0, 0], [1, 1]), 0);
 });
 
-test("percentileCutoff: keepFraction 0.5 keeps the top half visible", () => {
-  const scores = [0.1, 0.2, 0.3, 0.4]; // 2 should be dimmed, 2 shown
-  const cutoff = percentileCutoff(scores, 0.5);
-  const shown = scores.filter((s) => s >= cutoff);
-  assert.equal(shown.length, 2);
-  assert.deepEqual(shown.sort(), [0.3, 0.4]);
+test("computeCalibration: fits mean and std over a set of scores", () => {
+  const cal = computeCalibration([0.2, 0.4, 0.6]);
+  assert.ok(Math.abs(cal.mean - 0.4) < 1e-9);
+  assert.ok(cal.std > 0);
 });
 
-test("percentileCutoff: keepFraction 1 keeps everything visible", () => {
-  const scores = [0.1, 0.9, 0.5];
-  const cutoff = percentileCutoff(scores, 1);
-  assert.ok(scores.every((s) => s >= cutoff));
+test("computeCalibration: empty scores -> null", () => {
+  assert.equal(computeCalibration([]), null);
+  assert.equal(computeCalibration(undefined), null);
 });
 
-test("percentileCutoff: keepFraction 0 dims everything", () => {
-  const scores = [0.1, 0.9, 0.5];
-  const cutoff = percentileCutoff(scores, 0);
-  assert.ok(scores.every((s) => s < cutoff));
+test("computeCalibration: constant scores -> std is 0", () => {
+  const cal = computeCalibration([0.5, 0.5, 0.5]);
+  assert.equal(cal.mean, 0.5);
+  assert.equal(cal.std, 0);
 });
 
-test("percentileCutoff: empty scores never dims (cutoff is -Infinity)", () => {
-  assert.equal(percentileCutoff([], 0.5), -Infinity);
+test("calibratedCutoff: no calibration -> -Infinity (shows everything)", () => {
+  assert.equal(calibratedCutoff(null, 0.5), -Infinity);
+});
+
+test("calibratedCutoff: cutoff is mean + k*std", () => {
+  const cal = { mean: 0.5, std: 0.1 };
+  assert.ok(Math.abs(calibratedCutoff(cal, 1) - 0.6) < 1e-9);
+  assert.ok(Math.abs(calibratedCutoff(cal, -1) - 0.4) < 1e-9);
 });
 
 test("resolveDecision: above threshold, no keywords -> show", () => {
