@@ -68,6 +68,26 @@ const LOCKUP_FIXTURE_HTML = `
 </ytd-rich-item-renderer>
 `;
 
+// Watch-page sidebar markup — h3.ytLockupMetadataViewModelHeadingReset for
+// the title (not the anchor itself, unlike the home-feed lockup card), and
+// channel is just the first plain metadata-text span.
+const SIDEBAR_FIXTURE_HTML = `
+<yt-lockup-view-model>
+  <a class="ytLockupViewModelContentImage" href="/watch?v=sidebar98765"></a>
+  <h3 class="ytLockupMetadataViewModelHeadingReset">GPT-5 explained: what changed under the hood</h3>
+  <span class="ytContentMetadataViewModelMetadataText">Some AI Channel</span>
+  <span class="ytContentMetadataViewModelMetadataText">1.2M views</span>
+</yt-lockup-view-model>
+`;
+
+const SIDEBAR_AD_FIXTURE_HTML = `
+<yt-lockup-view-model>
+  <a class="ytLockupViewModelContentImage" href="/watch?v=sponsored123"></a>
+  <h3 class="ytLockupMetadataViewModelHeadingReset">Meet your match in 26 different styles</h3>
+  <span class="ytBadgeShapeAd">Ad</span>
+</yt-lockup-view-model>
+`;
+
 function parse(html) {
   const window = new Window();
   window.document.body.innerHTML = html;
@@ -120,6 +140,22 @@ test("extractCard: extracts from the current Lockup View Model markup", () => {
     channel: "Some AI Channel",
     isShort: false,
   });
+});
+
+test("extractCard: extracts from the watch-page sidebar markup", () => {
+  const card = parse(SIDEBAR_FIXTURE_HTML);
+  const result = extractCard(card);
+  assert.deepEqual(result, {
+    videoId: "sidebar98765",
+    title: "GPT-5 explained: what changed under the hood",
+    channel: "Some AI Channel",
+    isShort: false,
+  });
+});
+
+test("extractCard: skips a promoted sidebar card via the ad badge class", () => {
+  const card = parse(SIDEBAR_AD_FIXTURE_HTML);
+  assert.equal(extractCard(card), null);
 });
 
 test("extractCard: never throws on an empty element", () => {

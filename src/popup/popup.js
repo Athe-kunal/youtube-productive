@@ -108,8 +108,8 @@ async function loadFiltered() {
     return;
   }
 
-  if (!response.isHomeFeed) {
-    emptyState.textContent = "Filtering only runs on the YouTube home feed (v1).";
+  if (!response.isSupportedPage) {
+    emptyState.textContent = "Filtering runs on the home feed and video-watch recommendations.";
     return;
   }
 

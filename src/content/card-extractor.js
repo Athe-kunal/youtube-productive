@@ -1,4 +1,4 @@
-import { TITLE_SELECTORS, CHANNEL_SELECTORS, LINK_SELECTORS, SKIP_TAGS } from "./selectors.js";
+import { TITLE_SELECTORS, CHANNEL_SELECTORS, LINK_SELECTORS, SKIP_TAGS, SKIP_SELECTORS } from "./selectors.js";
 
 function queryFirst(root, selectors) {
   for (const selector of selectors) {
@@ -30,6 +30,7 @@ export function extractCard(cardEl) {
   try {
     if (SKIP_TAGS.has(cardEl.tagName)) return null;
     if ([...SKIP_TAGS].some((tag) => cardEl.querySelector(tag.toLowerCase()))) return null;
+    if (SKIP_SELECTORS.some((selector) => cardEl.querySelector(selector))) return null;
 
     const titleEl = queryFirst(cardEl, TITLE_SELECTORS);
     const title = titleEl && (titleEl.getAttribute("title") || titleEl.textContent || "").trim();

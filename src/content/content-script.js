@@ -9,7 +9,7 @@ import {
   CACHE_FLUSH_DEBOUNCE_MS,
   MAX_SCORE_ATTEMPTS,
 } from "../shared/constants.js";
-import { FEED_CONTAINER, CARD_SELECTOR } from "./selectors.js";
+import { getPageConfig } from "./selectors.js";
 import { extractCard } from "./card-extractor.js";
 import { applyDecision } from "./visibility-controller.js";
 import { createLogger } from "../shared/log.js";
@@ -18,14 +18,11 @@ const log = createLogger("content");
 
 let observer = null;
 let settings = null;
+let pageConfig = null; // home feed vs. watch-page sidebar — see selectors.js#PAGE_CONFIGS
 const scoreCache = new Map(); // videoId -> { score, version, failed? }
 const cardByVideoId = new Map(); // videoId -> card element
 const cardState = new Map(); // videoId -> { title, channel, score, decision } (for the review popup)
 const failureAttempts = new Map(); // videoId -> embed attempts this page session
-
-function isHomeFeed() {
-  return location.pathname === "/";
-}
 
 async function loadState() {
   settings = await getSettings();
@@ -105,7 +102,7 @@ async function processCardsInner() {
     return;
   }
 
-  const cards = document.querySelectorAll(CARD_SELECTOR);
+  const cards = document.querySelectorAll(pageConfig.cardSelector);
   const currentVersion = settings[STORAGE_KEYS.INTENT_VERSION];
   const versionStr = String(currentVersion);
   const infos = []; // cards not yet fully decided for this version
@@ -222,8 +219,8 @@ function hasNewCard(mutations) {
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue;
-      if (node.matches && node.matches(CARD_SELECTOR)) return true;
-      if (node.querySelector && node.querySelector(CARD_SELECTOR)) return true;
+      if (node.matches && node.matches(pageConfig.cardSelector)) return true;
+      if (node.querySelector && node.querySelector(pageConfig.cardSelector)) return true;
     }
   }
   return false;
@@ -237,13 +234,13 @@ function attachObserver() {
   // not present yet, fall back to document.body with subtree, but filter
   // mutations down to ones that actually add a card before scheduling a
   // pass — otherwise every deep mutation anywhere resets the debounce.
-  const specific = document.querySelector(FEED_CONTAINER);
+  const specific = document.querySelector(pageConfig.feedContainer);
   const container = specific || document.body;
   const subtree = !specific;
   if (!specific) {
-    log.warn("attachObserver: feed container selector didn't match, observing document.body instead", FEED_CONTAINER);
+    log.warn("attachObserver: feed container selector didn't match, observing document.body instead", pageConfig.feedContainer);
   } else {
-    log.log("attachObserver: container found, observing", FEED_CONTAINER);
+    log.log("attachObserver: container found, observing", pageConfig.feedContainer);
   }
   observer = new MutationObserver((mutations) => {
     if (subtree && !hasNewCard(mutations)) return;
@@ -262,8 +259,9 @@ function detachObserver() {
 
 async function init() {
   log.log("init", { path: location.pathname });
-  if (!isHomeFeed()) {
-    log.log("init: not home feed, skipping");
+  pageConfig = getPageConfig(location.pathname);
+  if (!pageConfig) {
+    log.log("init: unsupported page, skipping");
     detachObserver();
     return;
   }
@@ -309,7 +307,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       .filter(([, v]) => v.decision === "dim")
       .map(([videoId, v]) => ({ videoId, title: v.title, channel: v.channel, score: v.score }))
       .sort((a, b) => b.score - a.score);
-    sendResponse({ ok: true, isHomeFeed: isHomeFeed(), dimmed });
+    sendResponse({ ok: true, isSupportedPage: !!pageConfig, dimmed });
     return true;
   }
   return undefined;

@@ -7,8 +7,32 @@
 // cohort — so each field tries a list of candidate selectors in order
 // rather than assuming a single shape.
 
-export const FEED_CONTAINER = "ytd-rich-grid-renderer #contents";
-export const CARD_SELECTOR = "ytd-rich-item-renderer";
+// Per-page-type card boundary + observer target. Home feed cards
+// (ytd-rich-item-renderer) and watch-page sidebar cards (yt-lockup-view-
+// model) nest differently — yt-lockup-view-model appears *inside*
+// ytd-rich-item-renderer on the home feed too, so the two configs must
+// stay page-scoped rather than merged into one selector, or home-feed
+// cards would get extracted twice (once as the outer wrapper, once as
+// the inner lockup element).
+export const PAGE_CONFIGS = {
+  home: {
+    matchesPath: (path) => path === "/",
+    feedContainer: "ytd-rich-grid-renderer #contents",
+    cardSelector: "ytd-rich-item-renderer",
+  },
+  watchSidebar: {
+    matchesPath: (path) => path === "/watch",
+    feedContainer: "ytd-watch-next-secondary-results-renderer",
+    cardSelector: "yt-lockup-view-model",
+  },
+};
+
+export function getPageConfig(path) {
+  for (const config of Object.values(PAGE_CONFIGS)) {
+    if (config.matchesPath(path)) return config;
+  }
+  return null;
+}
 
 // Video link doubles as the videoId source for both markup variants —
 // any anchor pointing at /watch works regardless of which title markup
@@ -21,12 +45,21 @@ export const LINK_SELECTORS = [
   'a[href*="/shorts/"]',
 ];
 
-export const TITLE_SELECTORS = ["#video-title", ".ytLockupMetadataViewModelTitle"];
+export const TITLE_SELECTORS = [
+  "#video-title",
+  ".ytLockupMetadataViewModelTitle",
+  ".ytLockupMetadataViewModelHeadingReset",
+];
 
 export const CHANNEL_SELECTORS = [
   "ytd-channel-name #text",
   "ytd-channel-name yt-formatted-string",
   ".ytAttributedStringLink",
+  // Sidebar cards don't wrap the channel name in a distinct link class —
+  // it's just the first of several plain metadata-text spans (channel,
+  // view count, upload age, in that DOM order), so "first match" doubles
+  // as "channel name" here.
+  ".ytContentMetadataViewModelMetadataText",
 ];
 
 // v1 skips ads and algorithmic shelves entirely — they are never scored.
@@ -36,3 +69,8 @@ export const SKIP_TAGS = new Set([
   "YTD-DISPLAY-AD-RENDERER",
   "YTD-PROMOTED-SPARKLES-WEB-RENDERER",
 ]);
+
+// Class-based ad marker for Lockup-style cards (home feed's inline ads and
+// the watch sidebar's promoted cards both carry this badge) — stable
+// across locales, unlike matching on "Sponsored" text.
+export const SKIP_SELECTORS = [".ytBadgeShapeAd"];
