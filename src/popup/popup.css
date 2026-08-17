@@ -1,0 +1,158 @@
+body {
+  width: 340px;
+  max-height: 560px;
+  margin: 0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  color: #0f0f0f;
+}
+
+header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid #eee;
+}
+
+.title {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+#full-settings-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 15px;
+  color: #606060;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+#full-settings-btn:hover {
+  background: #f0f0f0;
+}
+
+#body {
+  max-height: 520px;
+  overflow-y: auto;
+  padding: 14px;
+  box-sizing: border-box;
+}
+
+label {
+  display: block;
+  font-weight: 600;
+  font-size: 12px;
+  margin-top: 12px;
+  margin-bottom: 5px;
+}
+
+label:first-child {
+  margin-top: 0;
+}
+
+textarea,
+input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 8px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  resize: vertical;
+}
+
+.segmented {
+  display: flex;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.segmented button {
+  flex: 1;
+  padding: 7px 4px;
+  font-size: 11.5px;
+  border: none;
+  background: white;
+  cursor: pointer;
+  color: #444;
+  border-left: 1px solid #ccc;
+}
+
+.segmented button:first-child {
+  border-left: none;
+}
+
+.segmented button.active {
+  background: #0f0f0f;
+  color: white;
+}
+
+#save {
+  margin-top: 14px;
+  padding: 7px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #0f0f0f;
+  color: white;
+  border: none;
+  border-radius: 16px;
+  cursor: pointer;
+}
+
+#save:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+#status {
+  margin-left: 10px;
+  font-size: 12px;
+  color: #606060;
+}
+
+hr {
+  border: none;
+  border-top: 1px solid #eee;
+  margin: 16px 0;
+}
+
+.section-heading {
+  font-weight: 600;
+  font-size: 12px;
+  margin: 0 0 8px 0;
+}
+
+.muted {
+  color: #606060;
+  font-size: 12.5px;
+  text-align: center;
+  padding: 10px 0;
+}
+
+#list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+#list li {
+  padding: 7px 0;
+  border-bottom: 1px solid #f4f4f4;
+  font-size: 12.5px;
+}
+
+#list li .row-title {
+  display: block;
+  color: #0f0f0f;
+  line-height: 1.3;
+}
+
+#list li .row-meta {
+  display: block;
+  color: #909090;
+  margin-top: 2px;
+}

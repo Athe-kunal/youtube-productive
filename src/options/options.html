@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>YouTube Intent Filter</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>YouTube Intent Filter</h1>
+      <p class="subtitle">Describe what you want to see. Everything runs on-device.</p>
+
+      <label for="intent">Intent</label>
+      <textarea
+        id="intent"
+        rows="4"
+        placeholder="AI research, systems, distributed training — no football, no drama"
+      ></textarea>
+
+      <label>Sensitivity</label>
+      <div id="sensitivity" class="segmented"></div>
+
+      <label for="include">Always show (keywords, comma or newline separated)</label>
+      <textarea id="include" rows="2" placeholder="e.g. kubernetes, rust"></textarea>
+
+      <label for="exclude">Always hide (keywords, comma or newline separated)</label>
+      <textarea id="exclude" rows="2" placeholder="e.g. football, drama"></textarea>
+
+      <button id="save">Save</button>
+      <span id="status" role="status"></span>
+    </main>
+    <script type="module" src="options.js"></script>
+  </body>
+</html>

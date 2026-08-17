@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>YouTube Intent Filter</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <span class="title">YouTube Intent Filter</span>
+      <button id="full-settings-btn" title="Open full settings page">⤢</button>
+    </header>
+
+    <div id="body">
+      <section id="settings-section">
+        <label for="intent">Show me</label>
+        <textarea
+          id="intent"
+          rows="3"
+          placeholder="AI research, systems, distributed training — no football, no drama"
+        ></textarea>
+
+        <label for="include">Always show</label>
+        <input id="include" type="text" placeholder="e.g. kubernetes, rust" />
+
+        <label for="exclude">Always hide</label>
+        <input id="exclude" type="text" placeholder="e.g. football, drama" />
+
+        <label>Sensitivity</label>
+        <div id="sensitivity" class="segmented"></div>
+
+        <button id="save">Save</button>
+        <span id="status" role="status"></span>
+      </section>
+
+      <hr />
+
+      <section id="filtered-section">
+        <p class="section-heading">Filtered on this page</p>
+        <p id="empty-state" class="muted">Loading…</p>
+        <ul id="list"></ul>
+      </section>
+    </div>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>
