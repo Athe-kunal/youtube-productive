@@ -1,7 +1,7 @@
 import { MSG, onMessage } from "../shared/messaging.js";
 import { cosineSimilarity } from "../shared/scoring.js";
 import { loadExtractor, embed, embedResilient } from "../lib/model-loader.js";
-import { BGE_QUERY_PREFIX } from "../shared/constants.js";
+import { BGE_QUERY_PREFIX, AVOID_LAMBDA } from "../shared/constants.js";
 
 let extractor = null;
 let loadingPromise = null;
@@ -49,12 +49,21 @@ onMessage((type, payload, _sender, sendResponse) => {
   }
 
   if (type === MSG.SCORE_BATCH) {
-    const { intentVector, videos } = payload;
+    // Only the title is embedded here — appending the channel name dilutes
+    // a short title's signal with tokens the intent never mentions.
+    // Channel-based filtering is handled explicitly via include/exclude
+    // keywords instead (shared/keyword-filter.js).
+    const { intentVector, avoidVector, videos } = payload;
     ensureModel()
-      .then((e) => embedResilient(e, videos.map((v) => `${v.title} ${v.channel || ""}`.trim())))
+      .then((e) => embedResilient(e, videos.map((v) => v.title)))
       .then((vectors) => {
         const results = videos
-          .map((v, i) => (vectors[i] ? { videoId: v.videoId, score: cosineSimilarity(intentVector, vectors[i]) } : null))
+          .map((v, i) => {
+            if (!vectors[i]) return null;
+            let score = cosineSimilarity(intentVector, vectors[i]);
+            if (avoidVector) score -= AVOID_LAMBDA * cosineSimilarity(avoidVector, vectors[i]);
+            return { videoId: v.videoId, score };
+          })
           .filter(Boolean);
         const failedCount = videos.length - results.length;
         sendResponse({ ok: true, results, failedCount });
@@ -64,7 +73,7 @@ onMessage((type, payload, _sender, sendResponse) => {
   }
 
   return undefined;
-});
+}, { target: "offscreen" });
 
 ensureModel().catch(() => {
   // Errors are already reported via MODEL_ERROR; nothing further to do here.

@@ -12,8 +12,13 @@ function extractVideoId(cardEl) {
   const link = queryFirst(cardEl, LINK_SELECTORS);
   const href = link && link.getAttribute("href");
   if (!href) return null;
-  const match = href.match(/[?&]v=([\w-]{6,})/);
-  return match ? match[1] : null;
+  const watchMatch = href.match(/[?&]v=([\w-]{6,})/);
+  if (watchMatch) return { videoId: watchMatch[1], isShort: false };
+  // Shorts links are /shorts/VIDEO_ID — no ?v= param, so they fell through
+  // unscored and fully visible without this.
+  const shortsMatch = href.match(/\/shorts\/([\w-]{6,})/);
+  if (shortsMatch) return { videoId: shortsMatch[1], isShort: true };
+  return null;
 }
 
 /**
@@ -30,13 +35,13 @@ export function extractCard(cardEl) {
     const title = titleEl && (titleEl.getAttribute("title") || titleEl.textContent || "").trim();
     if (!title) return null;
 
-    const videoId = extractVideoId(cardEl);
-    if (!videoId) return null;
+    const videoIdInfo = extractVideoId(cardEl);
+    if (!videoIdInfo) return null;
 
     const channelEl = queryFirst(cardEl, CHANNEL_SELECTORS);
     const channel = channelEl ? channelEl.textContent.trim() : "";
 
-    return { videoId, title, channel, isShort: false };
+    return { videoId: videoIdInfo.videoId, title, channel, isShort: videoIdInfo.isShort };
   } catch {
     return null;
   }

@@ -18,6 +18,7 @@ export const LINK_SELECTORS = [
   "a#thumbnail",
   "a.ytLockupMetadataViewModelTitle",
   'a[href*="/watch"]',
+  'a[href*="/shorts/"]',
 ];
 
 export const TITLE_SELECTORS = ["#video-title", ".ytLockupMetadataViewModelTitle"];
