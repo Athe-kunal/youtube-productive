@@ -35,3 +35,25 @@ export async function embed(extractor, texts) {
   }
   return vectors;
 }
+
+/**
+ * Batch tokenization means one unusual title (odd unicode, unexpected
+ * length) can throw and take the whole batch down with it. Falls back to
+ * embedding items one at a time so a single bad title only costs that one
+ * item — the caller gets `null` in that item's slot and should skip it.
+ */
+export async function embedResilient(extractor, texts) {
+  try {
+    return await embed(extractor, texts);
+  } catch {
+    const vectors = [];
+    for (const text of texts) {
+      try {
+        vectors.push((await embed(extractor, [text]))[0]);
+      } catch {
+        vectors.push(null);
+      }
+    }
+    return vectors;
+  }
+}

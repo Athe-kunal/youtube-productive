@@ -100,6 +100,9 @@ async function processCards() {
     if (!response || !response.ok) {
       log.error("processCards: SCORE_BATCH failed", response && response.error);
     } else {
+      if (response.failedCount) {
+        log.warn("processCards: some items failed to embed and will retry next pass", response.failedCount);
+      }
       for (const { videoId, score } of response.results) {
         scoreCache.set(videoId, { score, version: currentVersion });
       }

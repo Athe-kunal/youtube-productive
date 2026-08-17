@@ -1,6 +1,6 @@
 import { MSG, onMessage } from "../shared/messaging.js";
 import { cosineSimilarity } from "../shared/scoring.js";
-import { loadExtractor, embed } from "../lib/model-loader.js";
+import { loadExtractor, embed, embedResilient } from "../lib/model-loader.js";
 import { BGE_QUERY_PREFIX } from "../shared/constants.js";
 
 let extractor = null;
@@ -51,13 +51,13 @@ onMessage((type, payload, _sender, sendResponse) => {
   if (type === MSG.SCORE_BATCH) {
     const { intentVector, videos } = payload;
     ensureModel()
-      .then((e) => embed(e, videos.map((v) => `${v.title} ${v.channel || ""}`.trim())))
+      .then((e) => embedResilient(e, videos.map((v) => `${v.title} ${v.channel || ""}`.trim())))
       .then((vectors) => {
-        const results = videos.map((v, i) => ({
-          videoId: v.videoId,
-          score: cosineSimilarity(intentVector, vectors[i]),
-        }));
-        sendResponse({ ok: true, results });
+        const results = videos
+          .map((v, i) => (vectors[i] ? { videoId: v.videoId, score: cosineSimilarity(intentVector, vectors[i]) } : null))
+          .filter(Boolean);
+        const failedCount = videos.length - results.length;
+        sendResponse({ ok: true, results, failedCount });
       })
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
