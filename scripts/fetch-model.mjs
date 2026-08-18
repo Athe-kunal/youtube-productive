@@ -17,12 +17,12 @@ const MODEL_FILES = [
 // Matches the onnxruntime-web version pinned by @xenova/transformers.
 const ORT_VERSION = "1.14.0";
 const ORT_BASE = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ORT_VERSION}/dist`;
-const WASM_FILES = [
-  "ort-wasm.wasm",
-  "ort-wasm-simd.wasm",
-  "ort-wasm-threaded.wasm",
-  "ort-wasm-simd-threaded.wasm",
-];
+// The *-threaded variants spin up a Worker that calls importScripts() on a
+// blob: URL, which throws inside the offscreen document's sandbox — see
+// src/lib/model-loader.js's numThreads = 1. Since threading is force-
+// disabled, only the non-threaded builds are ever loaded; skip fetching
+// the threaded ones (~19MB dead weight in the packaged extension).
+const WASM_FILES = ["ort-wasm.wasm", "ort-wasm-simd.wasm"];
 
 async function download(url, destPath) {
   await fs.mkdir(path.dirname(destPath), { recursive: true });

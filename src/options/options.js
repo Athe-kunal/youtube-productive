@@ -1,12 +1,23 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
+import { startTour } from "../shared/tour.js";
 import { getSettings, setSettings } from "../shared/storage.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
-import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK } from "../shared/sensitivity.js";
+
+const TOUR_STEPS = [
+  { selector: ".switch", text: "Master switch — pause or resume the whole extension instantly." },
+  { selector: "#intent", text: "Show me — describe what you want to see, in your own words." },
+  {
+    selector: "#avoid",
+    text: 'Avoid — describe what to skip here, not in "Show me". Models can\'t understand "no X".',
+  },
+  { selector: "#include-chips", text: "Always show — exact keywords that force a video to show, no matter the score." },
+  { selector: "#exclude-chips", text: "Always hide — exact keywords that force a video to hide, no matter the score." },
+  { selector: ".toggle-label", text: "Active hours — optionally only filter during set hours. Off by default." },
+];
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
-const sensitivityEl = document.getElementById("sensitivity");
 const extensionEnabledEl = document.getElementById("extension-enabled");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
@@ -16,8 +27,6 @@ const weekendStartEl = document.getElementById("weekend-start");
 const weekendEndEl = document.getElementById("weekend-end");
 const saveBtn = document.getElementById("save");
 const statusEl = document.getElementById("status");
-
-let selectedLevel = DEFAULT_SENSITIVITY_KEY;
 
 const includeChips = createChipInput(document.getElementById("include-chips"), {
   placeholder: "e.g. kubernetes, rust",
@@ -32,22 +41,6 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
-function renderSensitivity() {
-  sensitivityEl.innerHTML = "";
-  for (const level of SENSITIVITY_LEVELS) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = level.label;
-    btn.className = level.key === selectedLevel ? "active" : "";
-    btn.addEventListener("click", () => {
-      selectedLevel = level.key;
-      renderSensitivity();
-      scheduleLiveSave();
-    });
-    sensitivityEl.appendChild(btn);
-  }
-}
-
 function readSchedule() {
   return {
     weekday: { start: weekdayStartEl.value || "00:00", end: weekdayEndEl.value || "23:59" },
@@ -59,6 +52,14 @@ function syncScheduleRowsVisibility() {
   scheduleRowsEl.hidden = !scheduleEnabledEl.checked;
 }
 
+function runTour() {
+  startTour(TOUR_STEPS, {
+    onFinish: () => setSettings({ [STORAGE_KEYS.TOUR_SEEN]: true }),
+  });
+}
+
+document.getElementById("tour-link").addEventListener("click", runTour);
+
 async function load() {
   const settings = await getSettings();
   extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
@@ -66,8 +67,6 @@ async function load() {
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
   includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
   excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
-  selectedLevel = kToLevelKey(settings[STORAGE_KEYS.SENSITIVITY_K]);
-  renderSensitivity();
 
   const schedule = settings[STORAGE_KEYS.SCHEDULE] || DEFAULT_SCHEDULE;
   weekdayStartEl.value = schedule.weekday.start;
@@ -76,17 +75,20 @@ async function load() {
   weekendEndEl.value = schedule.weekend.end;
   scheduleEnabledEl.checked = !!settings[STORAGE_KEYS.SCHEDULE_ENABLED];
   syncScheduleRowsVisibility();
+
+  if (!settings[STORAGE_KEYS.TOUR_SEEN]) {
+    // Let the page finish laying out before measuring element positions.
+    requestAnimationFrame(runTour);
+  }
 }
 
-// Sensitivity / keyword / schedule edits are cheap: persist immediately so
-// open YouTube tabs restyle instantly via chrome.storage.onChanged, no
-// re-embedding.
+// Keyword / schedule edits are cheap: persist immediately so open YouTube
+// tabs restyle instantly via chrome.storage.onChanged, no re-embedding.
 let liveDebounce = null;
 function scheduleLiveSave() {
   clearTimeout(liveDebounce);
   liveDebounce = setTimeout(async () => {
     await setSettings({
-      [STORAGE_KEYS.SENSITIVITY_K]: levelKeyToK(selectedLevel),
       [STORAGE_KEYS.INCLUDE_KEYWORDS]: includeChips.getChips(),
       [STORAGE_KEYS.EXCLUDE_KEYWORDS]: excludeChips.getChips(),
       [STORAGE_KEYS.SCHEDULE]: readSchedule(),
@@ -132,7 +134,6 @@ saveBtn.addEventListener("click", async () => {
     const response = await sendToBackground(MSG.SAVE_SETTINGS, {
       intent: intentEl.value.trim(),
       avoidIntent: avoidEl.value.trim(),
-      sensitivityK: levelKeyToK(selectedLevel),
       includeKeywords: includeChips.getChips(),
       excludeKeywords: excludeChips.getChips(),
       schedule: readSchedule(),

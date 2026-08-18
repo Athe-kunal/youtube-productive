@@ -11,6 +11,7 @@
         <div>
           <h1>YouTube Intent Filter</h1>
           <p class="subtitle">Describe what you want to see. Everything runs on-device.</p>
+          <button type="button" id="tour-link" class="tour-link">Take the tour</button>
         </div>
         <label class="switch" title="Enable/disable the extension">
           <input type="checkbox" id="extension-enabled" checked />
@@ -35,9 +36,6 @@
         Put things to avoid here, not in the "Show me" box — embedding models don't understand
         "no X", so writing it into the intent tends to surface more of X, not less.
       </p>
-
-      <label>Sensitivity</label>
-      <div id="sensitivity" class="segmented"></div>
 
       <label>Always show (keywords)</label>
       <div id="include-chips" class="chip-container"></div>

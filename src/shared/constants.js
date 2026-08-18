@@ -42,6 +42,8 @@ export const STORAGE_KEYS = {
   // Master kill switch — off means show everything, no scoring, no
   // observer work, regardless of intent/schedule/keywords.
   EXTENSION_ENABLED: "yif_extension_enabled",
+  // Whether the first-install settings tour has been shown/skipped.
+  TOUR_SEEN: "yif_tour_seen",
 };
 
 export const DEFAULT_SENSITIVITY_K = 0.25;
@@ -62,6 +64,7 @@ export const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.SCHEDULE]: DEFAULT_SCHEDULE,
   [STORAGE_KEYS.SCHEDULE_ENABLED]: false,
   [STORAGE_KEYS.EXTENSION_ENABLED]: true,
+  [STORAGE_KEYS.TOUR_SEEN]: false,
 };
 
 // How often an already-open tab re-checks whether it just entered/left the

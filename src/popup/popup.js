@@ -2,11 +2,9 @@ import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
 import { getSettings, setSettings } from "../shared/storage.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
-import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK } from "../shared/sensitivity.js";
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
-const sensitivityEl = document.getElementById("sensitivity");
 const extensionEnabledEl = document.getElementById("extension-enabled");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
@@ -19,7 +17,6 @@ const statusEl = document.getElementById("status");
 const emptyState = document.getElementById("empty-state");
 const listEl = document.getElementById("list");
 
-let selectedLevel = DEFAULT_SENSITIVITY_KEY;
 let currentTabId = null;
 
 const includeChips = createChipInput(document.getElementById("include-chips"), {
@@ -38,21 +35,6 @@ document.getElementById("full-settings-btn").addEventListener("click", () => {
 extensionEnabledEl.addEventListener("change", () => {
   setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
 });
-
-function renderSensitivity() {
-  sensitivityEl.innerHTML = "";
-  for (const level of SENSITIVITY_LEVELS) {
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.textContent = level.label;
-    btn.className = level.key === selectedLevel ? "active" : "";
-    btn.addEventListener("click", () => {
-      selectedLevel = level.key;
-      renderSensitivity();
-    });
-    sensitivityEl.appendChild(btn);
-  }
-}
 
 function readSchedule() {
   return {
@@ -74,8 +56,6 @@ async function loadSettings() {
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
   includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
   excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
-  selectedLevel = kToLevelKey(settings[STORAGE_KEYS.SENSITIVITY_K]);
-  renderSensitivity();
 
   const schedule = settings[STORAGE_KEYS.SCHEDULE] || DEFAULT_SCHEDULE;
   weekdayStartEl.value = schedule.weekday.start;
@@ -93,7 +73,6 @@ saveBtn.addEventListener("click", async () => {
     const response = await sendToBackground(MSG.SAVE_SETTINGS, {
       intent: intentEl.value.trim(),
       avoidIntent: avoidEl.value.trim(),
-      sensitivityK: levelKeyToK(selectedLevel),
       includeKeywords: includeChips.getChips(),
       excludeKeywords: excludeChips.getChips(),
       schedule: readSchedule(),

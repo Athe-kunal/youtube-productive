@@ -1,6 +1,6 @@
 import { MSG, onMessage, sendToOffscreen } from "../shared/messaging.js";
 import { getSettings, setSettings, getScoreCache, clearScoreCache, setScoreCache } from "../shared/storage.js";
-import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
+import { STORAGE_KEYS, DEFAULT_SCHEDULE, DEFAULT_SENSITIVITY_K } from "../shared/constants.js";
 import { computeCalibration } from "../shared/scoring.js";
 import { PROBE_TITLES } from "../shared/probe-titles.js";
 
@@ -127,7 +127,11 @@ onMessage((type, payload, sender, sendResponse) => {
           [STORAGE_KEYS.AVOID_VECTOR]: avoidVector,
           [STORAGE_KEYS.INTENT_VERSION]: version,
           [STORAGE_KEYS.CALIBRATION]: calibration,
-          [STORAGE_KEYS.SENSITIVITY_K]: payload.sensitivityK,
+          // Fixed rather than user-tunable — the three-way "Show more /
+          // Balanced / Show less" control turned out to be more confusing
+          // than useful, since its effect depends on calibration the user
+          // can't see.
+          [STORAGE_KEYS.SENSITIVITY_K]: DEFAULT_SENSITIVITY_K,
           [STORAGE_KEYS.INCLUDE_KEYWORDS]: payload.includeKeywords,
           [STORAGE_KEYS.EXCLUDE_KEYWORDS]: payload.excludeKeywords,
           [STORAGE_KEYS.SCHEDULE]: payload.schedule || DEFAULT_SCHEDULE,
@@ -183,4 +187,10 @@ chrome.action.onClicked.addListener((tab) => {
 // state, so sync every currently open tab once.
 chrome.tabs.query({}).then((tabs) => {
   for (const tab of tabs) syncPopupForTab(tab.id, tab.url);
+});
+
+chrome.runtime.onInstalled.addListener((details) => {
+  if (details.reason === "install") {
+    chrome.runtime.openOptionsPage();
+  }
 });

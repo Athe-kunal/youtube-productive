@@ -99,37 +99,6 @@ textarea {
   resize: vertical;
 }
 
-.segmented {
-  display: flex;
-  border: 1px solid #ccc;
-  border-radius: 8px;
-  overflow: hidden;
-  max-width: 320px;
-}
-
-.segmented button {
-  flex: 1;
-  margin-top: 0;
-  padding: 8px 6px;
-  font-size: 13px;
-  font-weight: 500;
-  border: none;
-  background: white;
-  color: #444;
-  cursor: pointer;
-  border-left: 1px solid #ccc;
-  border-radius: 0;
-}
-
-.segmented button:first-child {
-  border-left: none;
-}
-
-.segmented button.active {
-  background: #0f0f0f;
-  color: white;
-}
-
 .schedule-row {
   display: flex;
   align-items: center;
@@ -241,4 +210,104 @@ button:disabled {
   margin-left: 12px;
   font-size: 13px;
   color: #606060;
+}
+
+.tour-link {
+  background: none;
+  border: none;
+  color: #065fd4;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  margin-top: 6px;
+}
+
+.tour-link:hover {
+  text-decoration: underline;
+}
+
+.tour-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  z-index: 1000;
+}
+
+.tour-highlight {
+  position: absolute;
+  border: 2px solid #ffd54a;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.06);
+  z-index: 1001;
+  pointer-events: none;
+  transition: top 0.15s ease, left 0.15s ease, width 0.15s ease, height 0.15s ease;
+}
+
+.tour-tooltip {
+  position: absolute;
+  z-index: 1002;
+  max-width: 280px;
+  background: white;
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+  padding: 12px 14px;
+  transition: top 0.15s ease, left 0.15s ease;
+}
+
+.tour-step-count {
+  display: block;
+  font-size: 11px;
+  font-weight: 600;
+  color: #909090;
+  margin-bottom: 4px;
+}
+
+.tour-text {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: #0f0f0f;
+}
+
+.tour-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.tour-skip {
+  background: none;
+  border: none;
+  color: #606060;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-right: auto;
+}
+
+.tour-skip:hover {
+  text-decoration: underline;
+}
+
+.tour-back,
+.tour-next {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+}
+
+.tour-back {
+  background: none;
+  border: 1px solid #ccc;
+  color: #444;
+}
+
+.tour-next {
+  background: #0f0f0f;
+  border: none;
+  color: white;
 }
