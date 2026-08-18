@@ -38,6 +38,7 @@ async function loadState() {
     scoreCache.set(videoId, entry);
   }
   log.log("loadState", {
+    extensionEnabled: settings[STORAGE_KEYS.EXTENSION_ENABLED],
     hasIntentVector: !!settings[STORAGE_KEYS.INTENT_VECTOR],
     hasCalibration: !!settings[STORAGE_KEYS.CALIBRATION],
     sensitivityK: settings[STORAGE_KEYS.SENSITIVITY_K],
@@ -120,6 +121,12 @@ function showAllTrackedCards() {
 
 async function processCardsInner() {
   if (!pageConfig) return;
+
+  if (settings && settings[STORAGE_KEYS.EXTENSION_ENABLED] === false) {
+    log.log("processCards: extension disabled, showing everything");
+    showAllTrackedCards();
+    return;
+  }
 
   const scheduleEnabled = settings && settings[STORAGE_KEYS.SCHEDULE_ENABLED];
   if (scheduleEnabled && !isWithinSchedule(settings[STORAGE_KEYS.SCHEDULE])) {
@@ -258,26 +265,27 @@ function hasNewCard(mutations) {
 }
 
 function attachObserver() {
-  // Prefer the specific feed container when it's present — new cards are
-  // appended as its direct children, so childList without subtree is
-  // enough and never fires on YouTube's constant deep mutation (lazy
-  // thumbnail swaps, hover-preview injection, view-count refresh). If it's
-  // not present yet, fall back to document.body with subtree, but filter
-  // mutations down to ones that actually add a card before scheduling a
-  // pass — otherwise every deep mutation anywhere resets the debounce.
+  // Always observe with subtree: true. New cards aren't reliably direct
+  // children of the feed container — infinite scroll on the watch-page
+  // sidebar in particular appends them a level or two deeper (inside a new
+  // continuation/section wrapper each load), so childList-only observation
+  // silently stopped seeing anything past the first screenful. The
+  // hasNewCard filter is what keeps this cheap despite subtree: true,
+  // by ignoring YouTube's constant unrelated deep mutation (thumbnail
+  // swaps, hover previews, view-count refresh) and only scheduling a pass
+  // when an added node actually matches the card selector.
   const specific = document.querySelector(pageConfig.feedContainer);
   const container = specific || document.body;
-  const subtree = !specific;
   if (!specific) {
     log.warn("attachObserver: feed container selector didn't match, observing document.body instead", pageConfig.feedContainer);
   } else {
     log.log("attachObserver: container found, observing", pageConfig.feedContainer);
   }
   observer = new MutationObserver((mutations) => {
-    if (subtree && !hasNewCard(mutations)) return;
+    if (!hasNewCard(mutations)) return;
     scheduleProcess();
   });
-  observer.observe(container, { childList: true, subtree });
+  observer.observe(container, { childList: true, subtree: true });
   scheduleProcess();
 }
 
@@ -317,6 +325,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     STORAGE_KEYS.CALIBRATION,
     STORAGE_KEYS.SCHEDULE,
     STORAGE_KEYS.SCHEDULE_ENABLED,
+    STORAGE_KEYS.EXTENSION_ENABLED,
   ]) {
     if (key in changes) {
       settings[key] = changes[key].newValue;
@@ -330,10 +339,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
     scoreCache.clear();
     failureAttempts.clear();
     scheduleProcess();
-  } else if (STORAGE_KEYS.SCHEDULE in changes || STORAGE_KEYS.SCHEDULE_ENABLED in changes) {
-    // Needs the full pass, not just a cache reapply — entering the active
-    // window may need to score cards for the first time, and leaving it
-    // needs to show everything back rather than restyle from scores.
+  } else if (
+    STORAGE_KEYS.SCHEDULE in changes ||
+    STORAGE_KEYS.SCHEDULE_ENABLED in changes ||
+    STORAGE_KEYS.EXTENSION_ENABLED in changes
+  ) {
+    // Needs the full pass, not just a cache reapply — turning back on/
+    // entering the active window may need to score cards for the first
+    // time, and turning off/leaving needs to show everything back rather
+    // than restyle from scores.
     scheduleProcess();
   } else {
     reapplyFromCache();

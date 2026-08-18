@@ -39,6 +39,9 @@ export const STORAGE_KEYS = {
   // user explicitly turns scheduling on, rather than an always-on "all
   // day" window that's indistinguishable from off in the UI.
   SCHEDULE_ENABLED: "yif_schedule_enabled",
+  // Master kill switch — off means show everything, no scoring, no
+  // observer work, regardless of intent/schedule/keywords.
+  EXTENSION_ENABLED: "yif_extension_enabled",
 };
 
 export const DEFAULT_SENSITIVITY_K = 0.25;
@@ -58,6 +61,7 @@ export const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.EXCLUDE_KEYWORDS]: [],
   [STORAGE_KEYS.SCHEDULE]: DEFAULT_SCHEDULE,
   [STORAGE_KEYS.SCHEDULE_ENABLED]: false,
+  [STORAGE_KEYS.EXTENSION_ENABLED]: true,
 };
 
 // How often an already-open tab re-checks whether it just entered/left the

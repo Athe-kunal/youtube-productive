@@ -7,6 +7,7 @@ import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK }
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
 const sensitivityEl = document.getElementById("sensitivity");
+const extensionEnabledEl = document.getElementById("extension-enabled");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
@@ -60,6 +61,7 @@ function syncScheduleRowsVisibility() {
 
 async function load() {
   const settings = await getSettings();
+  extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
   includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
@@ -92,6 +94,12 @@ function scheduleLiveSave() {
     });
   }, 200);
 }
+
+// Applies instantly, no Save click needed — this is a kill switch, not a
+// tunable that benefits from a review-before-commit step.
+extensionEnabledEl.addEventListener("change", () => {
+  setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
+});
 
 scheduleEnabledEl.addEventListener("change", () => {
   syncScheduleRowsVisibility();

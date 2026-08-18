@@ -1,12 +1,13 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
-import { getSettings } from "../shared/storage.js";
+import { getSettings, setSettings } from "../shared/storage.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK } from "../shared/sensitivity.js";
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
 const sensitivityEl = document.getElementById("sensitivity");
+const extensionEnabledEl = document.getElementById("extension-enabled");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
@@ -30,6 +31,12 @@ const excludeChips = createChipInput(document.getElementById("exclude-chips"), {
 
 document.getElementById("full-settings-btn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
+});
+
+// Applies instantly, no Save click needed — this is a kill switch, not a
+// tunable that benefits from a review-before-commit step.
+extensionEnabledEl.addEventListener("change", () => {
+  setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
 });
 
 function renderSensitivity() {
@@ -62,6 +69,7 @@ scheduleEnabledEl.addEventListener("change", syncScheduleRowsVisibility);
 
 async function loadSettings() {
   const settings = await getSettings();
+  extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
   includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
