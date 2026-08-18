@@ -23,27 +23,32 @@
         <label for="avoid">Avoid</label>
         <textarea id="avoid" rows="2" placeholder="football, celebrity drama"></textarea>
 
-        <label for="include">Always show</label>
-        <input id="include" type="text" placeholder="e.g. kubernetes, rust" />
+        <label>Always show (keywords)</label>
+        <div id="include-chips" class="chip-container"></div>
 
-        <label for="exclude">Always hide</label>
-        <input id="exclude" type="text" placeholder="e.g. football, drama" />
+        <label>Always hide (keywords)</label>
+        <div id="exclude-chips" class="chip-container"></div>
 
         <label>Sensitivity</label>
         <div id="sensitivity" class="segmented"></div>
 
-        <label>Active hours</label>
-        <div class="schedule-row">
-          <span class="schedule-label">Weekdays</span>
-          <input type="time" id="weekday-start" />
-          <span>–</span>
-          <input type="time" id="weekday-end" />
-        </div>
-        <div class="schedule-row">
-          <span class="schedule-label">Weekends</span>
-          <input type="time" id="weekend-start" />
-          <span>–</span>
-          <input type="time" id="weekend-end" />
+        <label class="toggle-label">
+          <input type="checkbox" id="schedule-enabled" />
+          Only filter during set hours
+        </label>
+        <div id="schedule-rows" hidden>
+          <div class="schedule-row">
+            <span class="schedule-label">Weekdays</span>
+            <input type="time" id="weekday-start" />
+            <span>–</span>
+            <input type="time" id="weekday-end" />
+          </div>
+          <div class="schedule-row">
+            <span class="schedule-label">Weekends</span>
+            <input type="time" id="weekend-start" />
+            <span>–</span>
+            <input type="time" id="weekend-end" />
+          </div>
         </div>
 
         <button id="save">Save</button>

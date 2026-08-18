@@ -1,5 +1,5 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
-import { parseKeywordList } from "../shared/keyword-filter.js";
+import { createChipInput } from "../shared/chip-input.js";
 import { getSettings, setSettings } from "../shared/storage.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK } from "../shared/sensitivity.js";
@@ -7,8 +7,8 @@ import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK }
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
 const sensitivityEl = document.getElementById("sensitivity");
-const includeEl = document.getElementById("include");
-const excludeEl = document.getElementById("exclude");
+const scheduleEnabledEl = document.getElementById("schedule-enabled");
+const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
 const weekdayEndEl = document.getElementById("weekday-end");
 const weekendStartEl = document.getElementById("weekend-start");
@@ -17,6 +17,15 @@ const saveBtn = document.getElementById("save");
 const statusEl = document.getElementById("status");
 
 let selectedLevel = DEFAULT_SENSITIVITY_KEY;
+
+const includeChips = createChipInput(document.getElementById("include-chips"), {
+  placeholder: "e.g. kubernetes, rust",
+  onChange: scheduleLiveSave,
+});
+const excludeChips = createChipInput(document.getElementById("exclude-chips"), {
+  placeholder: "e.g. football, drama",
+  onChange: scheduleLiveSave,
+});
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -45,12 +54,16 @@ function readSchedule() {
   };
 }
 
+function syncScheduleRowsVisibility() {
+  scheduleRowsEl.hidden = !scheduleEnabledEl.checked;
+}
+
 async function load() {
   const settings = await getSettings();
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
-  includeEl.value = (settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []).join(", ");
-  excludeEl.value = (settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []).join(", ");
+  includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
+  excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
   selectedLevel = kToLevelKey(settings[STORAGE_KEYS.SENSITIVITY_K]);
   renderSensitivity();
 
@@ -59,6 +72,8 @@ async function load() {
   weekdayEndEl.value = schedule.weekday.end;
   weekendStartEl.value = schedule.weekend.start;
   weekendEndEl.value = schedule.weekend.end;
+  scheduleEnabledEl.checked = !!settings[STORAGE_KEYS.SCHEDULE_ENABLED];
+  syncScheduleRowsVisibility();
 }
 
 // Sensitivity / keyword / schedule edits are cheap: persist immediately so
@@ -70,15 +85,18 @@ function scheduleLiveSave() {
   liveDebounce = setTimeout(async () => {
     await setSettings({
       [STORAGE_KEYS.SENSITIVITY_K]: levelKeyToK(selectedLevel),
-      [STORAGE_KEYS.INCLUDE_KEYWORDS]: parseKeywordList(includeEl.value),
-      [STORAGE_KEYS.EXCLUDE_KEYWORDS]: parseKeywordList(excludeEl.value),
+      [STORAGE_KEYS.INCLUDE_KEYWORDS]: includeChips.getChips(),
+      [STORAGE_KEYS.EXCLUDE_KEYWORDS]: excludeChips.getChips(),
       [STORAGE_KEYS.SCHEDULE]: readSchedule(),
+      [STORAGE_KEYS.SCHEDULE_ENABLED]: scheduleEnabledEl.checked,
     });
   }, 200);
 }
 
-includeEl.addEventListener("input", scheduleLiveSave);
-excludeEl.addEventListener("input", scheduleLiveSave);
+scheduleEnabledEl.addEventListener("change", () => {
+  syncScheduleRowsVisibility();
+  scheduleLiveSave();
+});
 for (const el of [weekdayStartEl, weekdayEndEl, weekendStartEl, weekendEndEl]) {
   el.addEventListener("input", scheduleLiveSave);
 }
@@ -107,9 +125,10 @@ saveBtn.addEventListener("click", async () => {
       intent: intentEl.value.trim(),
       avoidIntent: avoidEl.value.trim(),
       sensitivityK: levelKeyToK(selectedLevel),
-      includeKeywords: parseKeywordList(includeEl.value),
-      excludeKeywords: parseKeywordList(excludeEl.value),
+      includeKeywords: includeChips.getChips(),
+      excludeKeywords: excludeChips.getChips(),
       schedule: readSchedule(),
+      scheduleEnabled: scheduleEnabledEl.checked,
     });
     if (response && response.ok) {
       setStatus("Saved.");

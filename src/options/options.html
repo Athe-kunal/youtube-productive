@@ -31,25 +31,29 @@
       <label>Sensitivity</label>
       <div id="sensitivity" class="segmented"></div>
 
-      <label for="include">Always show (keywords, comma or newline separated)</label>
-      <textarea id="include" rows="2" placeholder="e.g. kubernetes, rust"></textarea>
+      <label>Always show (keywords)</label>
+      <div id="include-chips" class="chip-container"></div>
 
-      <label for="exclude">Always hide (keywords, comma or newline separated)</label>
-      <textarea id="exclude" rows="2" placeholder="e.g. football, drama"></textarea>
+      <label>Always hide (keywords)</label>
+      <div id="exclude-chips" class="chip-container"></div>
 
-      <label>Active hours</label>
-      <p class="hint">Filtering only runs during these windows. Defaults to all day, every day.</p>
-      <div class="schedule-row">
-        <span class="schedule-label">Weekdays</span>
-        <input type="time" id="weekday-start" />
-        <span>to</span>
-        <input type="time" id="weekday-end" />
-      </div>
-      <div class="schedule-row">
-        <span class="schedule-label">Weekends</span>
-        <input type="time" id="weekend-start" />
-        <span>to</span>
-        <input type="time" id="weekend-end" />
+      <label class="toggle-label">
+        <input type="checkbox" id="schedule-enabled" />
+        Only filter during set hours
+      </label>
+      <div id="schedule-rows" hidden>
+        <div class="schedule-row">
+          <span class="schedule-label">Weekdays</span>
+          <input type="time" id="weekday-start" />
+          <span>to</span>
+          <input type="time" id="weekday-end" />
+        </div>
+        <div class="schedule-row">
+          <span class="schedule-label">Weekends</span>
+          <input type="time" id="weekend-start" />
+          <span>to</span>
+          <input type="time" id="weekend-end" />
+        </div>
       </div>
 
       <button id="save">Save</button>

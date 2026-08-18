@@ -1,14 +1,14 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
-import { parseKeywordList } from "../shared/keyword-filter.js";
+import { createChipInput } from "../shared/chip-input.js";
 import { getSettings } from "../shared/storage.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK } from "../shared/sensitivity.js";
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
-const includeEl = document.getElementById("include");
-const excludeEl = document.getElementById("exclude");
 const sensitivityEl = document.getElementById("sensitivity");
+const scheduleEnabledEl = document.getElementById("schedule-enabled");
+const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
 const weekdayEndEl = document.getElementById("weekday-end");
 const weekendStartEl = document.getElementById("weekend-start");
@@ -19,6 +19,14 @@ const emptyState = document.getElementById("empty-state");
 const listEl = document.getElementById("list");
 
 let selectedLevel = DEFAULT_SENSITIVITY_KEY;
+let currentTabId = null;
+
+const includeChips = createChipInput(document.getElementById("include-chips"), {
+  placeholder: "e.g. kubernetes, rust",
+});
+const excludeChips = createChipInput(document.getElementById("exclude-chips"), {
+  placeholder: "e.g. football, drama",
+});
 
 document.getElementById("full-settings-btn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
@@ -46,12 +54,18 @@ function readSchedule() {
   };
 }
 
+function syncScheduleRowsVisibility() {
+  scheduleRowsEl.hidden = !scheduleEnabledEl.checked;
+}
+
+scheduleEnabledEl.addEventListener("change", syncScheduleRowsVisibility);
+
 async function loadSettings() {
   const settings = await getSettings();
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
-  includeEl.value = (settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []).join(", ");
-  excludeEl.value = (settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []).join(", ");
+  includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
+  excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
   selectedLevel = kToLevelKey(settings[STORAGE_KEYS.SENSITIVITY_K]);
   renderSensitivity();
 
@@ -60,6 +74,8 @@ async function loadSettings() {
   weekdayEndEl.value = schedule.weekday.end;
   weekendStartEl.value = schedule.weekend.start;
   weekendEndEl.value = schedule.weekend.end;
+  scheduleEnabledEl.checked = !!settings[STORAGE_KEYS.SCHEDULE_ENABLED];
+  syncScheduleRowsVisibility();
 }
 
 saveBtn.addEventListener("click", async () => {
@@ -70,9 +86,10 @@ saveBtn.addEventListener("click", async () => {
       intent: intentEl.value.trim(),
       avoidIntent: avoidEl.value.trim(),
       sensitivityK: levelKeyToK(selectedLevel),
-      includeKeywords: parseKeywordList(includeEl.value),
-      excludeKeywords: parseKeywordList(excludeEl.value),
+      includeKeywords: includeChips.getChips(),
+      excludeKeywords: excludeChips.getChips(),
       schedule: readSchedule(),
+      scheduleEnabled: scheduleEnabledEl.checked,
     });
     statusEl.textContent = response && response.ok ? "Saved." : `Error: ${(response && response.error) || "unknown"}`;
   } finally {
@@ -95,13 +112,30 @@ function renderFiltered(dimmed) {
   listEl.innerHTML = "";
   for (const v of dimmed) {
     const li = document.createElement("li");
+
     const titleEl = document.createElement("span");
     titleEl.className = "row-title";
     titleEl.textContent = v.title;
-    const metaEl = document.createElement("span");
-    metaEl.className = "row-meta";
-    metaEl.textContent = `${v.channel || "Unknown channel"} · score ${v.score.toFixed(2)}`;
-    li.append(titleEl, metaEl);
+
+    const unhideBtn = document.createElement("button");
+    unhideBtn.type = "button";
+    unhideBtn.className = "unhide-btn";
+    unhideBtn.textContent = "Unhide";
+    unhideBtn.addEventListener("click", async () => {
+      unhideBtn.disabled = true;
+      try {
+        await chrome.tabs.sendMessage(currentTabId, { type: MSG.UNHIDE_VIDEO, payload: { videoId: v.videoId } });
+        li.remove();
+        if (!listEl.children.length) {
+          emptyState.textContent = "Nothing filtered on this page yet.";
+          emptyState.style.display = "";
+        }
+      } catch {
+        unhideBtn.disabled = false;
+      }
+    });
+
+    li.append(titleEl, unhideBtn);
     listEl.appendChild(li);
   }
 }
@@ -112,6 +146,7 @@ async function loadFiltered() {
     emptyState.textContent = "Open youtube.com to see filtered videos here.";
     return;
   }
+  currentTabId = tab.id;
 
   let response;
   try {

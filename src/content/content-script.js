@@ -25,6 +25,10 @@ const scoreCache = new Map(); // videoId -> { score, version, failed? }
 const cardByVideoId = new Map(); // videoId -> card element
 const cardState = new Map(); // videoId -> { title, channel, score, decision } (for the review popup)
 const failureAttempts = new Map(); // videoId -> embed attempts this page session
+// Explicit per-video "show anyway" clicks from the popup's filtered list.
+// Session-only (cleared on init/navigation) — a permanent allowlist is what
+// the "Always show" keyword field is for.
+const manualShows = new Set();
 
 async function loadState() {
   settings = await getSettings();
@@ -39,8 +43,8 @@ async function loadState() {
     sensitivityK: settings[STORAGE_KEYS.SENSITIVITY_K],
     includeKeywords: settings[STORAGE_KEYS.INCLUDE_KEYWORDS],
     excludeKeywords: settings[STORAGE_KEYS.EXCLUDE_KEYWORDS],
+    scheduleEnabled: settings[STORAGE_KEYS.SCHEDULE_ENABLED],
     schedule: settings[STORAGE_KEYS.SCHEDULE],
-    withinSchedule: isWithinSchedule(settings[STORAGE_KEYS.SCHEDULE]),
     cachedScores: scoreCache.size,
   });
 }
@@ -57,14 +61,16 @@ function applyDecisionsForScoredItems(items) {
   const cutoff = calibratedCutoff(validCalibration, settings[STORAGE_KEYS.SENSITIVITY_K]);
 
   for (const item of items) {
-    const decision = resolveDecision({
-      score: item.score,
-      threshold: cutoff,
-      title: item.title,
-      channel: item.channel,
-      includeKeywords: settings[STORAGE_KEYS.INCLUDE_KEYWORDS],
-      excludeKeywords: settings[STORAGE_KEYS.EXCLUDE_KEYWORDS],
-    });
+    const decision = manualShows.has(item.videoId)
+      ? "show"
+      : resolveDecision({
+          score: item.score,
+          threshold: cutoff,
+          title: item.title,
+          channel: item.channel,
+          includeKeywords: settings[STORAGE_KEYS.INCLUDE_KEYWORDS],
+          excludeKeywords: settings[STORAGE_KEYS.EXCLUDE_KEYWORDS],
+        });
     applyDecision(item.cardEl, decision);
     // Marks this card as fully decided for the current intent version, so
     // later passes can skip re-extracting/re-scoring it entirely.
@@ -115,7 +121,8 @@ function showAllTrackedCards() {
 async function processCardsInner() {
   if (!pageConfig) return;
 
-  if (!isWithinSchedule(settings && settings[STORAGE_KEYS.SCHEDULE])) {
+  const scheduleEnabled = settings && settings[STORAGE_KEYS.SCHEDULE_ENABLED];
+  if (scheduleEnabled && !isWithinSchedule(settings[STORAGE_KEYS.SCHEDULE])) {
     log.log("processCards: outside active schedule window, showing everything");
     showAllTrackedCards();
     return;
@@ -293,6 +300,7 @@ async function init() {
   cardByVideoId.clear();
   cardState.clear();
   failureAttempts.clear();
+  manualShows.clear();
   detachObserver();
   attachObserver();
 }
@@ -308,6 +316,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     STORAGE_KEYS.INTENT_VERSION,
     STORAGE_KEYS.CALIBRATION,
     STORAGE_KEYS.SCHEDULE,
+    STORAGE_KEYS.SCHEDULE_ENABLED,
   ]) {
     if (key in changes) {
       settings[key] = changes[key].newValue;
@@ -321,7 +330,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     scoreCache.clear();
     failureAttempts.clear();
     scheduleProcess();
-  } else if (STORAGE_KEYS.SCHEDULE in changes) {
+  } else if (STORAGE_KEYS.SCHEDULE in changes || STORAGE_KEYS.SCHEDULE_ENABLED in changes) {
     // Needs the full pass, not just a cache reapply — entering the active
     // window may need to score cards for the first time, and leaving it
     // needs to show everything back rather than restyle from scores.
@@ -340,6 +349,18 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({ ok: true, isSupportedPage: !!pageConfig, dimmed });
     return true;
   }
+
+  if (message && message.type === MSG.UNHIDE_VIDEO) {
+    const { videoId } = message.payload;
+    manualShows.add(videoId);
+    const cardEl = cardByVideoId.get(videoId);
+    if (cardEl) applyDecision(cardEl, "show");
+    const prior = cardState.get(videoId);
+    if (prior) cardState.set(videoId, { ...prior, decision: "show" });
+    sendResponse({ ok: true });
+    return true;
+  }
+
   return undefined;
 });
 

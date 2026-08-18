@@ -131,6 +131,7 @@ onMessage((type, payload, sender, sendResponse) => {
           [STORAGE_KEYS.INCLUDE_KEYWORDS]: payload.includeKeywords,
           [STORAGE_KEYS.EXCLUDE_KEYWORDS]: payload.excludeKeywords,
           [STORAGE_KEYS.SCHEDULE]: payload.schedule || DEFAULT_SCHEDULE,
+          [STORAGE_KEYS.SCHEDULE_ENABLED]: !!payload.scheduleEnabled,
         });
 
         sendResponse({ ok: true });

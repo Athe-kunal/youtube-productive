@@ -33,17 +33,18 @@ export const STORAGE_KEYS = {
   EXCLUDE_KEYWORDS: "yif_exclude_keywords",
   SCORE_CACHE: "yif_score_cache",
   // { weekday: {start, end}, weekend: {start, end} }, "HH:MM" 24h strings.
-  // Outside the active window the extension shows everything untouched —
-  // see shared/schedule.js.
+  // Only enforced when SCHEDULE_ENABLED is true — see shared/schedule.js.
   SCHEDULE: "yif_schedule",
+  // Opt-in toggle. Off by default: filtering runs all the time until the
+  // user explicitly turns scheduling on, rather than an always-on "all
+  // day" window that's indistinguishable from off in the UI.
+  SCHEDULE_ENABLED: "yif_schedule_enabled",
 };
 
 export const DEFAULT_SENSITIVITY_K = 0.25;
-// Whole day by default — the schedule only narrows this if the user sets
-// it explicitly.
 export const DEFAULT_SCHEDULE = {
-  weekday: { start: "00:00", end: "23:59" },
-  weekend: { start: "00:00", end: "23:59" },
+  weekday: { start: "09:00", end: "17:00" },
+  weekend: { start: "09:00", end: "17:00" },
 };
 export const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.INTENT_TEXT]: "",
@@ -56,6 +57,7 @@ export const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.INCLUDE_KEYWORDS]: [],
   [STORAGE_KEYS.EXCLUDE_KEYWORDS]: [],
   [STORAGE_KEYS.SCHEDULE]: DEFAULT_SCHEDULE,
+  [STORAGE_KEYS.SCHEDULE_ENABLED]: false,
 };
 
 // How often an already-open tab re-checks whether it just entered/left the

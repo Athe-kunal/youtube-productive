@@ -15,6 +15,7 @@ export const MSG = {
   EMBEDDING_ERROR: "EMBEDDING_ERROR",
 
   GET_FILTERED_VIDEOS: "GET_FILTERED_VIDEOS",
+  UNHIDE_VIDEO: "UNHIDE_VIDEO",
 };
 
 // chrome.runtime.sendMessage broadcasts to every extension page — options,
