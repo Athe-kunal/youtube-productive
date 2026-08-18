@@ -1,6 +1,6 @@
 import { MSG, onMessage, sendToOffscreen } from "../shared/messaging.js";
 import { getSettings, setSettings, getScoreCache, clearScoreCache, setScoreCache } from "../shared/storage.js";
-import { STORAGE_KEYS } from "../shared/constants.js";
+import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 import { computeCalibration } from "../shared/scoring.js";
 import { PROBE_TITLES } from "../shared/probe-titles.js";
 
@@ -130,6 +130,7 @@ onMessage((type, payload, sender, sendResponse) => {
           [STORAGE_KEYS.SENSITIVITY_K]: payload.sensitivityK,
           [STORAGE_KEYS.INCLUDE_KEYWORDS]: payload.includeKeywords,
           [STORAGE_KEYS.EXCLUDE_KEYWORDS]: payload.excludeKeywords,
+          [STORAGE_KEYS.SCHEDULE]: payload.schedule || DEFAULT_SCHEDULE,
         });
 
         sendResponse({ ok: true });

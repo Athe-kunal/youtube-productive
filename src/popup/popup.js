@@ -1,7 +1,7 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { parseKeywordList } from "../shared/keyword-filter.js";
 import { getSettings } from "../shared/storage.js";
-import { STORAGE_KEYS } from "../shared/constants.js";
+import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 import { SENSITIVITY_LEVELS, DEFAULT_SENSITIVITY_KEY, kToLevelKey, levelKeyToK } from "../shared/sensitivity.js";
 
 const intentEl = document.getElementById("intent");
@@ -9,6 +9,10 @@ const avoidEl = document.getElementById("avoid");
 const includeEl = document.getElementById("include");
 const excludeEl = document.getElementById("exclude");
 const sensitivityEl = document.getElementById("sensitivity");
+const weekdayStartEl = document.getElementById("weekday-start");
+const weekdayEndEl = document.getElementById("weekday-end");
+const weekendStartEl = document.getElementById("weekend-start");
+const weekendEndEl = document.getElementById("weekend-end");
 const saveBtn = document.getElementById("save");
 const statusEl = document.getElementById("status");
 const emptyState = document.getElementById("empty-state");
@@ -35,6 +39,13 @@ function renderSensitivity() {
   }
 }
 
+function readSchedule() {
+  return {
+    weekday: { start: weekdayStartEl.value || "00:00", end: weekdayEndEl.value || "23:59" },
+    weekend: { start: weekendStartEl.value || "00:00", end: weekendEndEl.value || "23:59" },
+  };
+}
+
 async function loadSettings() {
   const settings = await getSettings();
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
@@ -43,6 +54,12 @@ async function loadSettings() {
   excludeEl.value = (settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []).join(", ");
   selectedLevel = kToLevelKey(settings[STORAGE_KEYS.SENSITIVITY_K]);
   renderSensitivity();
+
+  const schedule = settings[STORAGE_KEYS.SCHEDULE] || DEFAULT_SCHEDULE;
+  weekdayStartEl.value = schedule.weekday.start;
+  weekdayEndEl.value = schedule.weekday.end;
+  weekendStartEl.value = schedule.weekend.start;
+  weekendEndEl.value = schedule.weekend.end;
 }
 
 saveBtn.addEventListener("click", async () => {
@@ -55,6 +72,7 @@ saveBtn.addEventListener("click", async () => {
       sensitivityK: levelKeyToK(selectedLevel),
       includeKeywords: parseKeywordList(includeEl.value),
       excludeKeywords: parseKeywordList(excludeEl.value),
+      schedule: readSchedule(),
     });
     statusEl.textContent = response && response.ok ? "Saved." : `Error: ${(response && response.error) || "unknown"}`;
   } finally {

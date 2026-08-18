@@ -32,6 +32,20 @@
         <label>Sensitivity</label>
         <div id="sensitivity" class="segmented"></div>
 
+        <label>Active hours</label>
+        <div class="schedule-row">
+          <span class="schedule-label">Weekdays</span>
+          <input type="time" id="weekday-start" />
+          <span>–</span>
+          <input type="time" id="weekday-end" />
+        </div>
+        <div class="schedule-row">
+          <span class="schedule-label">Weekends</span>
+          <input type="time" id="weekend-start" />
+          <span>–</span>
+          <input type="time" id="weekend-end" />
+        </div>
+
         <button id="save">Save</button>
         <span id="status" role="status"></span>
       </section>

@@ -91,6 +91,29 @@ input[type="text"] {
   color: white;
 }
 
+.schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  margin-top: 6px;
+}
+
+.schedule-row .schedule-label {
+  width: 60px;
+  color: #444;
+  flex-shrink: 0;
+}
+
+.schedule-row input[type="time"] {
+  width: auto;
+  font-family: inherit;
+  font-size: 12px;
+  padding: 3px 4px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
 #save {
   margin-top: 14px;
   padding: 7px 18px;

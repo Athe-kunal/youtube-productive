@@ -79,6 +79,27 @@ textarea {
   color: white;
 }
 
+.schedule-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.schedule-row .schedule-label {
+  width: 72px;
+  color: #444;
+}
+
+.schedule-row input[type="time"] {
+  font-family: inherit;
+  font-size: 13px;
+  padding: 4px 6px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+}
+
 button {
   margin-top: 24px;
   padding: 8px 20px;

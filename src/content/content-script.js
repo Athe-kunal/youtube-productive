@@ -1,6 +1,7 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { resolveDecision } from "../shared/keyword-filter.js";
 import { calibratedCutoff } from "../shared/scoring.js";
+import { isWithinSchedule } from "../shared/schedule.js";
 import { getSettings, getScoreCache, setScoreCache } from "../shared/storage.js";
 import {
   STORAGE_KEYS,
@@ -8,6 +9,7 @@ import {
   SCORE_CHUNK_SIZE,
   CACHE_FLUSH_DEBOUNCE_MS,
   MAX_SCORE_ATTEMPTS,
+  SCHEDULE_RECHECK_MS,
 } from "../shared/constants.js";
 import { getPageConfig } from "./selectors.js";
 import { extractCard } from "./card-extractor.js";
@@ -37,6 +39,8 @@ async function loadState() {
     sensitivityK: settings[STORAGE_KEYS.SENSITIVITY_K],
     includeKeywords: settings[STORAGE_KEYS.INCLUDE_KEYWORDS],
     excludeKeywords: settings[STORAGE_KEYS.EXCLUDE_KEYWORDS],
+    schedule: settings[STORAGE_KEYS.SCHEDULE],
+    withinSchedule: isWithinSchedule(settings[STORAGE_KEYS.SCHEDULE]),
     cachedScores: scoreCache.size,
   });
 }
@@ -96,7 +100,27 @@ function flushCacheNow() {
   setScoreCache(plain).catch((err) => log.error("cache flush failed", err));
 }
 
+// Outside the active schedule window, the extension is fully off: whatever
+// is currently dimmed gets shown again and no scoring happens. Re-checked
+// periodically (see SCHEDULE_RECHECK_MS) so a tab left open across a
+// boundary (e.g. work hours ending) doesn't need a reload to pick it up.
+function showAllTrackedCards() {
+  for (const [videoId, cardEl] of cardByVideoId) {
+    applyDecision(cardEl, "show");
+    const prior = cardState.get(videoId);
+    if (prior) cardState.set(videoId, { ...prior, decision: "show" });
+  }
+}
+
 async function processCardsInner() {
+  if (!pageConfig) return;
+
+  if (!isWithinSchedule(settings && settings[STORAGE_KEYS.SCHEDULE])) {
+    log.log("processCards: outside active schedule window, showing everything");
+    showAllTrackedCards();
+    return;
+  }
+
   if (!settings || !settings[STORAGE_KEYS.INTENT_VECTOR]) {
     log.warn("processCards: skipped, no intent vector set yet");
     return;
@@ -283,6 +307,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
     STORAGE_KEYS.INTENT_VECTOR,
     STORAGE_KEYS.INTENT_VERSION,
     STORAGE_KEYS.CALIBRATION,
+    STORAGE_KEYS.SCHEDULE,
   ]) {
     if (key in changes) {
       settings[key] = changes[key].newValue;
@@ -295,6 +320,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
     // New intent embedding: cached scores are stale, re-score everything.
     scoreCache.clear();
     failureAttempts.clear();
+    scheduleProcess();
+  } else if (STORAGE_KEYS.SCHEDULE in changes) {
+    // Needs the full pass, not just a cache reapply — entering the active
+    // window may need to score cards for the first time, and leaving it
+    // needs to show everything back rather than restyle from scores.
     scheduleProcess();
   } else {
     reapplyFromCache();
@@ -314,6 +344,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 window.addEventListener("pagehide", flushCacheNow);
+
+// A tab left open across a schedule boundary (e.g. work hours ending at
+// 17:00) has no other trigger to re-evaluate — nothing in the DOM changes
+// on its own at that moment.
+setInterval(() => {
+  if (pageConfig) scheduleProcess();
+}, SCHEDULE_RECHECK_MS);
 
 log.log("content script injected", { url: location.href });
 document.addEventListener("yt-navigate-finish", init);

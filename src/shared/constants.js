@@ -32,9 +32,19 @@ export const STORAGE_KEYS = {
   INCLUDE_KEYWORDS: "yif_include_keywords",
   EXCLUDE_KEYWORDS: "yif_exclude_keywords",
   SCORE_CACHE: "yif_score_cache",
+  // { weekday: {start, end}, weekend: {start, end} }, "HH:MM" 24h strings.
+  // Outside the active window the extension shows everything untouched —
+  // see shared/schedule.js.
+  SCHEDULE: "yif_schedule",
 };
 
 export const DEFAULT_SENSITIVITY_K = 0.25;
+// Whole day by default — the schedule only narrows this if the user sets
+// it explicitly.
+export const DEFAULT_SCHEDULE = {
+  weekday: { start: "00:00", end: "23:59" },
+  weekend: { start: "00:00", end: "23:59" },
+};
 export const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.INTENT_TEXT]: "",
   [STORAGE_KEYS.INTENT_VECTOR]: null,
@@ -45,7 +55,13 @@ export const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.SENSITIVITY_K]: DEFAULT_SENSITIVITY_K,
   [STORAGE_KEYS.INCLUDE_KEYWORDS]: [],
   [STORAGE_KEYS.EXCLUDE_KEYWORDS]: [],
+  [STORAGE_KEYS.SCHEDULE]: DEFAULT_SCHEDULE,
 };
+
+// How often an already-open tab re-checks whether it just entered/left the
+// active schedule window, so a long-lived tab doesn't need a page reload
+// to pick up a boundary crossing (e.g. work hours ending at 17:00).
+export const SCHEDULE_RECHECK_MS = 60000;
 
 export const DEBOUNCE_MS = 150;
 export const SCORE_CACHE_LIMIT = 2000;
