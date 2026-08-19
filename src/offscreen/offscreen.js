@@ -17,15 +17,48 @@ function tierOf(payload) {
   return (payload && payload.tier) || DEFAULT_MODEL_TIER;
 }
 
+// transformers.js reports progress per file (config.json, tokenizer.json,
+// onnx weights, ...), each restarting its own 0-100% run. Forwarding that
+// raw makes the displayed percentage jump backward every time a new file
+// starts downloading. Instead, track loaded/total bytes per file and report
+// one combined, monotonically non-decreasing percentage across the whole
+// load.
+function makeAggregateProgress(onProgress) {
+  const files = new Map();
+  let lastPercent = 0;
+  return (progress) => {
+    if (progress && progress.status === "progress" && progress.file) {
+      files.set(progress.file, {
+        loaded: progress.loaded || 0,
+        total: progress.total || progress.loaded || 0,
+      });
+      let loaded = 0;
+      let total = 0;
+      for (const f of files.values()) {
+        loaded += f.loaded;
+        total += f.total;
+      }
+      const percent = total > 0 ? (loaded / total) * 100 : 0;
+      lastPercent = Math.max(lastPercent, percent);
+      onProgress({ ...progress, progress: lastPercent });
+    } else {
+      onProgress(progress);
+    }
+  };
+}
+
 async function ensureModel(tier) {
   if (extractors.has(tier)) return extractors.get(tier);
   if (!loadingPromises.has(tier)) {
-    const promise = loadExtractor(tier, (progress) => {
-      chrome.runtime.sendMessage({
-        type: MSG.MODEL_DOWNLOAD_PROGRESS,
-        payload: { tier, ...progress },
-      });
-    })
+    const promise = loadExtractor(
+      tier,
+      makeAggregateProgress((progress) => {
+        chrome.runtime.sendMessage({
+          type: MSG.MODEL_DOWNLOAD_PROGRESS,
+          payload: { tier, ...progress },
+        });
+      })
+    )
       .then((e) => {
         extractors.set(tier, e);
         chrome.runtime.sendMessage({ type: MSG.MODEL_READY, payload: { tier } });

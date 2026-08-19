@@ -84,31 +84,15 @@ label {
   margin-bottom: 6px;
 }
 
-textarea,
-input[type="range"] {
+textarea {
   width: 100%;
   box-sizing: border-box;
   font-family: inherit;
   font-size: 14px;
-}
-
-textarea {
   padding: 8px;
   border: 1px solid #ccc;
   border-radius: 6px;
   resize: vertical;
-}
-
-.model-tier-labels {
-  display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #606060;
-  margin-top: 4px;
-}
-
-input[type="range"]:disabled {
-  opacity: 0.5;
 }
 
 .schedule-row {

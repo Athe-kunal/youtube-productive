@@ -37,17 +37,20 @@
         "no X", so writing it into the intent tends to surface more of X, not less.
       </p>
 
-      <label for="model-tier">Model quality</label>
-      <input type="range" id="model-tier" min="0" max="1" step="1" value="0" />
-      <div class="model-tier-labels">
-        <span>Fast</span>
-        <span>Accurate (multilingual)</span>
-      </div>
+      <!-- Multilingual model tier disabled for now — sticking to the small
+           bundled model only. Re-enable by uncommenting this block and the
+           matching code in options.js.
+      <label class="toggle-label">
+        <input type="checkbox" id="model-tier" />
+        Use the larger multilingual model (accuracy over speed)
+      </label>
       <p class="hint">
         Results feel off? The larger model understands more languages and subtler phrasing.
         It's slower and downloads ~570 MB the first time you switch to it.
       </p>
       <p id="model-tier-status" class="hint"></p>
+      -->
+
 
       <label>Always show (keywords)</label>
       <div id="include-chips" class="chip-container"></div>

@@ -2,7 +2,10 @@ import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
 import { startTour } from "../shared/tour.js";
 import { getSettings, setSettings } from "../shared/storage.js";
-import { STORAGE_KEYS, DEFAULT_SCHEDULE, DEFAULT_MODEL_TIER, MODEL_TIERS } from "../shared/constants.js";
+import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
+// Model tier switching is disabled for now (see commented-out block below
+// and in options.html) — re-add DEFAULT_MODEL_TIER, MODEL_TIERS to the
+// import above when re-enabling it.
 
 const TOUR_STEPS = [
   { selector: ".switch", text: "Master switch — pause or resume the whole extension instantly." },
@@ -18,8 +21,8 @@ const TOUR_STEPS = [
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
-const modelTierEl = document.getElementById("model-tier");
-const modelTierStatusEl = document.getElementById("model-tier-status");
+// const modelTierEl = document.getElementById("model-tier");
+// const modelTierStatusEl = document.getElementById("model-tier-status");
 const extensionEnabledEl = document.getElementById("extension-enabled");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
@@ -62,19 +65,19 @@ function runTour() {
 
 document.getElementById("tour-link").addEventListener("click", runTour);
 
-let currentTier = DEFAULT_MODEL_TIER;
-
-function tierFromSliderValue(value) {
-  return value === "1" ? "large" : "small";
-}
+// let currentTier = DEFAULT_MODEL_TIER;
+//
+// function tierFromCheckbox(checked) {
+//   return checked ? "large" : "small";
+// }
 
 async function load() {
   const settings = await getSettings();
   extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
-  currentTier = settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
-  modelTierEl.value = currentTier === "large" ? "1" : "0";
+  // currentTier = settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
+  // modelTierEl.checked = currentTier === "large";
   includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
   excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
 
@@ -113,39 +116,39 @@ extensionEnabledEl.addEventListener("change", () => {
   setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
 });
 
-// Applies instantly like the switches above — but switching tiers is a
-// real cost (re-embed + recalibrate, and a one-time ~570 MB download for
-// the large tier), so it's gated by a confirm() rather than firing on
-// every drag of the slider.
-modelTierEl.addEventListener("change", async () => {
-  const nextTier = tierFromSliderValue(modelTierEl.value);
-  if (nextTier === currentTier) return;
-
-  if (nextTier === "large") {
-    const proceed = confirm(
-      `Switch to ${MODEL_TIERS.large.label}? It downloads ${MODEL_TIERS.large.sizeLabel} and is slower per batch.`
-    );
-    if (!proceed) {
-      modelTierEl.value = currentTier === "large" ? "1" : "0";
-      return;
-    }
-  }
-
-  modelTierEl.disabled = true;
-  modelTierStatusEl.textContent = nextTier === "large" ? "Downloading model…" : "Switching model…";
-  try {
-    const response = await sendToBackground(MSG.SET_MODEL_TIER, { tier: nextTier });
-    if (response && response.ok) {
-      currentTier = nextTier;
-      modelTierStatusEl.textContent = "Model ready.";
-    } else {
-      modelTierEl.value = currentTier === "large" ? "1" : "0";
-      modelTierStatusEl.textContent = `Error: ${(response && response.error) || "unknown"}`;
-    }
-  } finally {
-    modelTierEl.disabled = false;
-  }
-});
+// Model tier switching UI disabled for now — sticking to the small bundled
+// model only. Re-enable by uncommenting this listener, the state/helpers
+// above, and the markup in options.html.
+//
+// modelTierEl.addEventListener("change", async () => {
+//   const nextTier = tierFromCheckbox(modelTierEl.checked);
+//   if (nextTier === currentTier) return;
+//
+//   if (nextTier === "large") {
+//     const proceed = confirm(
+//       `Switch to ${MODEL_TIERS.large.label}? It downloads ${MODEL_TIERS.large.sizeLabel} and is slower per batch.`
+//     );
+//     if (!proceed) {
+//       modelTierEl.checked = currentTier === "large";
+//       return;
+//     }
+//   }
+//
+//   modelTierEl.disabled = true;
+//   modelTierStatusEl.textContent = nextTier === "large" ? "Downloading model…" : "Switching model…";
+//   try {
+//     const response = await sendToBackground(MSG.SET_MODEL_TIER, { tier: nextTier });
+//     if (response && response.ok) {
+//       currentTier = nextTier;
+//       modelTierStatusEl.textContent = "Model ready.";
+//     } else {
+//       modelTierEl.checked = currentTier === "large";
+//       modelTierStatusEl.textContent = `Error: ${(response && response.error) || "unknown"}`;
+//     }
+//   } finally {
+//     modelTierEl.disabled = false;
+//   }
+// });
 
 scheduleEnabledEl.addEventListener("change", () => {
   syncScheduleRowsVisibility();
@@ -155,21 +158,23 @@ for (const el of [weekdayStartEl, weekdayEndEl, weekendStartEl, weekendEndEl]) {
   el.addEventListener("input", scheduleLiveSave);
 }
 
-chrome.runtime.onMessage.addListener((message) => {
-  if (!message) return;
-  if (message.type === MSG.MODEL_DOWNLOAD_PROGRESS) {
-    const p = message.payload;
-    if (p && p.status === "progress") {
-      modelTierStatusEl.textContent = `Loading model… ${Math.round(p.progress || 0)}%`;
-    } else {
-      modelTierStatusEl.textContent = "Loading model…";
-    }
-  } else if (message.type === MSG.MODEL_READY) {
-    modelTierStatusEl.textContent = "Model ready.";
-  } else if (message.type === MSG.MODEL_ERROR) {
-    modelTierStatusEl.textContent = `Model error: ${message.payload && message.payload.message}`;
-  }
-});
+// Drove the model-tier download status text; no-op while tier switching is
+// disabled (see above).
+// chrome.runtime.onMessage.addListener((message) => {
+//   if (!message) return;
+//   if (message.type === MSG.MODEL_DOWNLOAD_PROGRESS) {
+//     const p = message.payload;
+//     if (p && p.status === "progress") {
+//       modelTierStatusEl.textContent = `Loading model… ${Math.round(p.progress || 0)}%`;
+//     } else {
+//       modelTierStatusEl.textContent = "Loading model…";
+//     }
+//   } else if (message.type === MSG.MODEL_READY) {
+//     modelTierStatusEl.textContent = "Model ready.";
+//   } else if (message.type === MSG.MODEL_ERROR) {
+//     modelTierStatusEl.textContent = `Model error: ${message.payload && message.payload.message}`;
+//   }
+// });
 
 saveBtn.addEventListener("click", async () => {
   saveBtn.disabled = true;
