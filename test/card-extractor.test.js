@@ -88,6 +88,22 @@ const SIDEBAR_AD_FIXTURE_HTML = `
 </yt-lockup-view-model>
 `;
 
+// Shorts shelf item — the horizontal "Shorts" row embedded in the home
+// feed. Renders through a Shorts-specific Lockup variant: no #video-title
+// id and no channel name shown at all (unlike regular/sidebar cards).
+const SHORTS_SHELF_FIXTURE_HTML = `
+<ytd-rich-item-renderer>
+  <div id="content">
+    <ytm-shorts-lockup-view-model-v2>
+      <a class="shortsLockupViewModelHostEndpoint" href="/shorts/shelfShort456"></a>
+      <span class="shortsLockupViewModelHostMetadataTitle">
+        <span role="text">30-second pasta trick</span>
+      </span>
+    </ytm-shorts-lockup-view-model-v2>
+  </div>
+</ytd-rich-item-renderer>
+`;
+
 function parse(html) {
   const window = new Window();
   window.document.body.innerHTML = html;
@@ -127,6 +143,17 @@ test("extractCard: extracts a Shorts card from a /shorts/ href, marked isShort",
     videoId: "shortsId123",
     title: "Quick recipe hack",
     channel: "Some Cooking Channel",
+    isShort: true,
+  });
+});
+
+test("extractCard: extracts a home-feed Shorts shelf card (Shorts Lockup markup)", () => {
+  const card = parse(SHORTS_SHELF_FIXTURE_HTML);
+  const result = extractCard(card);
+  assert.deepEqual(result, {
+    videoId: "shelfShort456",
+    title: "30-second pasta trick",
+    channel: "",
     isShort: true,
   });
 });

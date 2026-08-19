@@ -49,6 +49,12 @@ export const TITLE_SELECTORS = [
   "#video-title",
   ".ytLockupMetadataViewModelTitle",
   ".ytLockupMetadataViewModelHeadingReset",
+  // Shorts shelf items (the horizontal "Shorts" row mixed into the home
+  // feed) render through a separate Lockup variant with Shorts-specific
+  // class names rather than the regular/sidebar ones above — without this,
+  // extractCard silently fails on every Shorts card (no title match) and
+  // they never get scored at all.
+  ".shortsLockupViewModelHostMetadataTitle",
 ];
 
 export const CHANNEL_SELECTORS = [
@@ -62,7 +68,14 @@ export const CHANNEL_SELECTORS = [
   ".ytContentMetadataViewModelMetadataText",
 ];
 
-// v1 skips ads and algorithmic shelves entirely — they are never scored.
+// v1 skips ads and shelf *containers* as a single unit — a shelf wraps
+// several unrelated videos (or, for a Shorts shelf, several individual
+// Shorts) under one heading, so scoring the container itself as "one card"
+// would score it off whichever title extractCard happens to find first.
+// This does not stop the videos *inside* a shelf from being scored: they
+// nest as their own individual ytd-rich-item-renderer elements (matching
+// the home page's cardSelector) and get picked up and extracted normally,
+// title selectors permitting — see TITLE_SELECTORS' Shorts-Lockup entry.
 export const SKIP_TAGS = new Set([
   "YTD-AD-SLOT-RENDERER",
   "YTD-RICH-SHELF-RENDERER",
