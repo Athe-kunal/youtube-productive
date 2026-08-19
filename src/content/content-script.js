@@ -6,11 +6,11 @@ import { getSettings, getScoreCache, setScoreCache } from "../shared/storage.js"
 import {
   STORAGE_KEYS,
   DEBOUNCE_MS,
-  SCORE_CHUNK_SIZE,
   CACHE_FLUSH_DEBOUNCE_MS,
   MAX_SCORE_ATTEMPTS,
   SCHEDULE_RECHECK_MS,
 } from "../shared/constants.js";
+import { ADAPTIVE_SCORE_CHUNK_SIZE, EXTRACT_YIELD_EVERY, yieldToMain } from "../shared/device.js";
 import { getPageConfig } from "./selectors.js";
 import { extractCard } from "./card-extractor.js";
 import { applyDecision } from "./visibility-controller.js";
@@ -140,17 +140,18 @@ async function processCardsInner() {
     return;
   }
 
-  const cards = document.querySelectorAll(pageConfig.cardSelector);
+  const cards = collectCandidateCards();
   const currentVersion = settings[STORAGE_KEYS.INTENT_VERSION];
   const versionStr = String(currentVersion);
   const infos = []; // cards not yet fully decided for this version
   const toScore = [];
 
+  let sinceYield = 0;
   for (const cardEl of cards) {
     // Already decided for this intent version: re-register in
     // cardByVideoId (cheap) and skip the DOM extraction + scoring work
     // entirely — this is what keeps a scroll-triggered mutation pass from
-    // re-querying every card ever seen.
+    // re-processing every card ever seen.
     if (cardEl.dataset.yifVersion === versionStr && cardEl.dataset.yifVideoId) {
       cardByVideoId.set(cardEl.dataset.yifVideoId, cardEl);
       continue;
@@ -164,9 +165,20 @@ async function processCardsInner() {
     if (!(cached && cached.version === currentVersion)) {
       toScore.push(info);
     }
+
+    // A long first load or a full re-scan (see collectCandidateCards) can
+    // hand this loop hundreds of cards at once. Extracting them all in one
+    // synchronous pass is a long task that visibly janks scrolling on a
+    // slow CPU, even though the model inference itself already runs off
+    // the main thread. Yielding periodically keeps each slice short.
+    sinceYield++;
+    if (sinceYield >= EXTRACT_YIELD_EVERY) {
+      sinceYield = 0;
+      await yieldToMain();
+    }
   }
 
-  log.log("processCards", { domCards: cards.length, newlySeen: infos.length, toScore: toScore.length });
+  log.log("processCards", { candidateCards: cards.size, newlySeen: infos.length, toScore: toScore.length });
 
   const infoByVideoId = new Map(infos.map((i) => [i.videoId, i]));
   const toScoreIds = new Set(toScore.map((i) => i.videoId));
@@ -179,8 +191,10 @@ async function processCardsInner() {
 
   // Chunked so a long first-load batch doesn't pad one giant forward pass
   // and so cards resolve progressively instead of all-at-once at the end.
-  for (let i = 0; i < toScore.length; i += SCORE_CHUNK_SIZE) {
-    const chunk = toScore.slice(i, i + SCORE_CHUNK_SIZE);
+  // Chunk size is hardware-adaptive (see shared/device.js): smaller batches
+  // on weak/low-memory devices keep each WASM inference round trip short.
+  for (let i = 0; i < toScore.length; i += ADAPTIVE_SCORE_CHUNK_SIZE) {
+    const chunk = toScore.slice(i, i + ADAPTIVE_SCORE_CHUNK_SIZE);
     const response = await sendToBackground(MSG.SCORE_BATCH, { videos: chunk });
     if (!response || !response.ok) {
       log.error("processCards: SCORE_BATCH failed", response && response.error);
@@ -253,15 +267,53 @@ function scheduleProcess() {
   debounceTimer = setTimeout(runProcessCards, DEBOUNCE_MS);
 }
 
-function hasNewCard(mutations) {
+// Roots to search for cards on the next process pass. Populated from
+// MutationObserver's addedNodes so a scroll-triggered pass only walks the
+// subtrees that actually just appeared, instead of re-querying every card
+// ever seen on the page — on a long infinite-scroll session (hundreds of
+// accumulated cards) that full-document re-scan is the kind of O(n) work
+// that's invisible on a fast machine and a real source of jank on a slow
+// one. `null` means "do a full scan" — used for init and other passes that
+// aren't triggered by a specific DOM addition (e.g. intent change, the
+// periodic schedule recheck) where a targeted root set isn't available and
+// correctness requires re-evaluating everything anyway.
+let pendingRoots = null;
+
+function collectCandidateCards() {
+  if (pendingRoots === null) {
+    // Consume the full-scan request; resume scoped/incremental tracking
+    // for subsequent passes until something forces another full scan.
+    pendingRoots = new Set();
+    return new Set(document.querySelectorAll(pageConfig.cardSelector));
+  }
+  const roots = pendingRoots;
+  pendingRoots = new Set();
+  const cards = new Set();
+  for (const root of roots) {
+    if (!root.isConnected) continue;
+    if (root.matches && root.matches(pageConfig.cardSelector)) cards.add(root);
+    if (root.querySelectorAll) {
+      for (const el of root.querySelectorAll(pageConfig.cardSelector)) cards.add(el);
+    }
+  }
+  return cards;
+}
+
+function collectAddedRoots(mutations) {
+  let found = false;
   for (const m of mutations) {
     for (const node of m.addedNodes) {
       if (node.nodeType !== 1) continue;
-      if (node.matches && node.matches(pageConfig.cardSelector)) return true;
-      if (node.querySelector && node.querySelector(pageConfig.cardSelector)) return true;
+      if (
+        (node.matches && node.matches(pageConfig.cardSelector)) ||
+        (node.querySelector && node.querySelector(pageConfig.cardSelector))
+      ) {
+        found = true;
+        if (pendingRoots !== null) pendingRoots.add(node);
+      }
     }
   }
-  return false;
+  return found;
 }
 
 function attachObserver() {
@@ -270,10 +322,11 @@ function attachObserver() {
   // sidebar in particular appends them a level or two deeper (inside a new
   // continuation/section wrapper each load), so childList-only observation
   // silently stopped seeing anything past the first screenful. The
-  // hasNewCard filter is what keeps this cheap despite subtree: true,
-  // by ignoring YouTube's constant unrelated deep mutation (thumbnail
+  // collectAddedRoots filter is what keeps this cheap despite subtree:
+  // true, by ignoring YouTube's constant unrelated deep mutation (thumbnail
   // swaps, hover previews, view-count refresh) and only scheduling a pass
-  // when an added node actually matches the card selector.
+  // — scoped to the added nodes — when one actually matches the card
+  // selector.
   const specific = document.querySelector(pageConfig.feedContainer);
   const container = specific || document.body;
   if (!specific) {
@@ -282,10 +335,13 @@ function attachObserver() {
     log.log("attachObserver: container found, observing", pageConfig.feedContainer);
   }
   observer = new MutationObserver((mutations) => {
-    if (!hasNewCard(mutations)) return;
+    if (!collectAddedRoots(mutations)) return;
     scheduleProcess();
   });
   observer.observe(container, { childList: true, subtree: true });
+  // First pass has no mutation-derived roots yet — do a full scan to catch
+  // whatever's already rendered.
+  pendingRoots = null;
   scheduleProcess();
 }
 
@@ -336,8 +392,11 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
   if (STORAGE_KEYS.INTENT_VERSION in changes) {
     // New intent embedding: cached scores are stale, re-score everything.
+    // Not driven by a DOM mutation, so there's no added-node root to scope
+    // to — every card already on the page needs re-evaluating.
     scoreCache.clear();
     failureAttempts.clear();
+    pendingRoots = null;
     scheduleProcess();
   } else if (
     STORAGE_KEYS.SCHEDULE in changes ||
@@ -347,7 +406,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
     // Needs the full pass, not just a cache reapply — turning back on/
     // entering the active window may need to score cards for the first
     // time, and turning off/leaving needs to show everything back rather
-    // than restyle from scores.
+    // than restyle from scores. Same reasoning as above: force a full scan.
+    pendingRoots = null;
     scheduleProcess();
   } else {
     reapplyFromCache();
@@ -384,7 +444,11 @@ window.addEventListener("pagehide", flushCacheNow);
 // 17:00) has no other trigger to re-evaluate — nothing in the DOM changes
 // on its own at that moment.
 setInterval(() => {
-  if (pageConfig) scheduleProcess();
+  if (!pageConfig) return;
+  // Not driven by a DOM mutation — force a full scan so a boundary crossing
+  // is picked up for cards already on the page, not just newly added ones.
+  pendingRoots = null;
+  scheduleProcess();
 }, SCHEDULE_RECHECK_MS);
 
 log.log("content script injected", { url: location.href });
