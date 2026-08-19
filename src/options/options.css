@@ -99,6 +99,18 @@ textarea {
   resize: vertical;
 }
 
+.model-tier-labels {
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #606060;
+  margin-top: 4px;
+}
+
+input[type="range"]:disabled {
+  opacity: 0.5;
+}
+
 .schedule-row {
   display: flex;
   align-items: center;
