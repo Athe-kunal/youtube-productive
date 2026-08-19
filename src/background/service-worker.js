@@ -1,6 +1,6 @@
 import { MSG, onMessage, sendToOffscreen } from "../shared/messaging.js";
 import { getSettings, setSettings, getScoreCache, clearScoreCache, setScoreCache } from "../shared/storage.js";
-import { STORAGE_KEYS, DEFAULT_SCHEDULE, DEFAULT_SENSITIVITY_K } from "../shared/constants.js";
+import { STORAGE_KEYS, DEFAULT_SCHEDULE, DEFAULT_SENSITIVITY_K, DEFAULT_MODEL_TIER } from "../shared/constants.js";
 import { computeCalibration } from "../shared/scoring.js";
 import { PROBE_TITLES } from "../shared/probe-titles.js";
 
@@ -36,9 +36,9 @@ chrome.runtime.onMessage.addListener((message) => {
  * if `text` is empty. Throws the offscreen error string on failure so the
  * caller's catch can turn it into a sendResponse({ ok: false }).
  */
-async function embedText(text) {
+async function embedText(text, tier) {
   if (!text) return null;
-  const response = await sendToOffscreen(MSG.EMBED_INTENT, { text });
+  const response = await sendToOffscreen(MSG.EMBED_INTENT, { text, tier });
   if (!response || !response.ok) {
     throw new Error((response && response.error) || "embedding failed");
   }
@@ -51,15 +51,38 @@ async function embedText(text) {
  * intent is derived from this later (mean + k * std). One-time cost per
  * save, not per scroll batch.
  */
-async function calibrate(intentVector, avoidVector) {
+async function calibrate(intentVector, avoidVector, tier) {
   if (!intentVector) return null;
   const response = await sendToOffscreen(MSG.SCORE_BATCH, {
     intentVector,
     avoidVector,
+    tier,
     videos: PROBE_TITLES.map((title, i) => ({ videoId: `probe-${i}`, title })),
   });
   if (!response || !response.ok || response.results.length === 0) return null;
   return computeCalibration(response.results.map((r) => r.score));
+}
+
+/**
+ * Re-embeds the intent/avoid text under `tier` and recalibrates against
+ * the probe set — shared by SAVE_SETTINGS (when the text changed) and
+ * SET_MODEL_TIER (when the model changed but the text didn't), since a
+ * tier switch invalidates the old vectors' dimensionality exactly like an
+ * intent text edit invalidates their meaning.
+ */
+async function reembedAndCalibrate(intentText, avoidText, tier, prevVersion) {
+  await ensureOffscreenDocument();
+  // Force the model to load even if there's no intent text yet (e.g.
+  // switching tiers right after install) — otherwise embedText's
+  // empty-text short-circuit below would skip loading entirely, and a
+  // tier switch with no visible download would look broken.
+  await sendToOffscreen(MSG.ENSURE_MODEL_LOADED, { tier });
+  const vector = await embedText(intentText, tier);
+  const avoidVector = await embedText(avoidText, tier);
+  const version = (prevVersion || 0) + 1;
+  await clearScoreCache();
+  const fit = vector ? await calibrate(vector, avoidVector, tier) : null;
+  return { vector, avoidVector, version, calibration: fit ? { ...fit, version } : null };
 }
 
 onMessage((type, payload, sender, sendResponse) => {
@@ -77,6 +100,7 @@ onMessage((type, payload, sender, sendResponse) => {
         const response = await sendToOffscreen(MSG.SCORE_BATCH, {
           intentVector,
           avoidVector,
+          tier: settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER,
           videos: payload.videos,
         });
         if (!response || !response.ok) {
@@ -103,6 +127,7 @@ onMessage((type, payload, sender, sendResponse) => {
         const prev = await getSettings();
         const intentChanged = payload.intent !== prev[STORAGE_KEYS.INTENT_TEXT];
         const avoidChanged = (payload.avoidIntent || "") !== (prev[STORAGE_KEYS.AVOID_TEXT] || "");
+        const tier = prev[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
 
         let vector = prev[STORAGE_KEYS.INTENT_VECTOR];
         let avoidVector = prev[STORAGE_KEYS.AVOID_VECTOR] || null;
@@ -110,14 +135,11 @@ onMessage((type, payload, sender, sendResponse) => {
         let calibration = prev[STORAGE_KEYS.CALIBRATION] || null;
 
         if (intentChanged || avoidChanged) {
-          await ensureOffscreenDocument();
-          if (intentChanged) vector = await embedText(payload.intent);
-          if (avoidChanged) avoidVector = await embedText(payload.avoidIntent);
-
-          version = (version || 0) + 1;
-          await clearScoreCache();
-          const fit = vector ? await calibrate(vector, avoidVector) : null;
-          calibration = fit ? { ...fit, version } : null;
+          const result = await reembedAndCalibrate(payload.intent, payload.avoidIntent, tier, version);
+          vector = result.vector;
+          avoidVector = result.avoidVector;
+          version = result.version;
+          calibration = result.calibration;
         }
 
         await setSettings({
@@ -136,6 +158,34 @@ onMessage((type, payload, sender, sendResponse) => {
           [STORAGE_KEYS.EXCLUDE_KEYWORDS]: payload.excludeKeywords,
           [STORAGE_KEYS.SCHEDULE]: payload.schedule || DEFAULT_SCHEDULE,
           [STORAGE_KEYS.SCHEDULE_ENABLED]: !!payload.scheduleEnabled,
+        });
+
+        sendResponse({ ok: true });
+      } catch (err) {
+        sendResponse({ ok: false, error: String(err) });
+      }
+    })();
+    return true;
+  }
+
+  if (type === MSG.SET_MODEL_TIER) {
+    (async () => {
+      try {
+        const prev = await getSettings();
+        const tier = payload.tier;
+        const result = await reembedAndCalibrate(
+          prev[STORAGE_KEYS.INTENT_TEXT],
+          prev[STORAGE_KEYS.AVOID_TEXT],
+          tier,
+          prev[STORAGE_KEYS.INTENT_VERSION]
+        );
+
+        await setSettings({
+          [STORAGE_KEYS.MODEL_TIER]: tier,
+          [STORAGE_KEYS.INTENT_VECTOR]: result.vector,
+          [STORAGE_KEYS.AVOID_VECTOR]: result.avoidVector,
+          [STORAGE_KEYS.INTENT_VERSION]: result.version,
+          [STORAGE_KEYS.CALIBRATION]: result.calibration,
         });
 
         sendResponse({ ok: true });

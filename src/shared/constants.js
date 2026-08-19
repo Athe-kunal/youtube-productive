@@ -2,7 +2,31 @@
 // "GPT-5 explained" for an "LLM" intent) above irrelevant ones more
 // reliably than MiniLM in practice — MiniLM leans heavily on literal word
 // overlap, which produces bad rankings for short keyword-style intents.
-export const MODEL_ID = "Xenova/bge-small-en-v1.5";
+//
+// bge-m3 is the opt-in upgrade: multilingual, more accurate, but ~17x the
+// download size — never loaded unless the user picks it, and fetched
+// remotely from the Hub on first use rather than bundled (see
+// scripts/fetch-model.mjs, which deliberately does NOT fetch this one).
+export const MODEL_TIERS = {
+  small: {
+    id: "Xenova/bge-small-en-v1.5",
+    label: "Fast",
+    dim: 384,
+    remote: false,
+    threaded: false,
+    sizeLabel: "34 MB, bundled",
+  },
+  large: {
+    id: "Xenova/bge-m3",
+    label: "Accurate (multilingual)",
+    dim: 1024,
+    remote: true,
+    threaded: true,
+    sizeLabel: "~570 MB, downloaded once",
+  },
+};
+export const DEFAULT_MODEL_TIER = "small";
+
 // BGE was trained with an instruction prefix on the query side for
 // retrieval-style tasks; passages are embedded as-is.
 export const BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: ";
@@ -31,6 +55,10 @@ export const STORAGE_KEYS = {
   SENSITIVITY_K: "yif_sensitivity_k",
   INCLUDE_KEYWORDS: "yif_include_keywords",
   EXCLUDE_KEYWORDS: "yif_exclude_keywords",
+  // Which entry in MODEL_TIERS is active. Switching tiers changes the
+  // embedding dimension, so it invalidates INTENT_VECTOR/AVOID_VECTOR/
+  // CALIBRATION/SCORE_CACHE exactly like an intent text change does.
+  MODEL_TIER: "yif_model_tier",
   SCORE_CACHE: "yif_score_cache",
   // { weekday: {start, end}, weekend: {start, end} }, "HH:MM" 24h strings.
   // Only enforced when SCHEDULE_ENABLED is true — see shared/schedule.js.
@@ -61,6 +89,7 @@ export const DEFAULT_SETTINGS = {
   [STORAGE_KEYS.SENSITIVITY_K]: DEFAULT_SENSITIVITY_K,
   [STORAGE_KEYS.INCLUDE_KEYWORDS]: [],
   [STORAGE_KEYS.EXCLUDE_KEYWORDS]: [],
+  [STORAGE_KEYS.MODEL_TIER]: DEFAULT_MODEL_TIER,
   [STORAGE_KEYS.SCHEDULE]: DEFAULT_SCHEDULE,
   [STORAGE_KEYS.SCHEDULE_ENABLED]: false,
   [STORAGE_KEYS.EXTENSION_ENABLED]: true,
@@ -77,6 +106,12 @@ export const SCORE_CACHE_LIMIT = 2000;
 // Cards are marked processed and skipped on later passes; each mutation
 // batch only needs to embed/decide the cards that are actually new.
 export const SCORE_CHUNK_SIZE = 32;
+// bge-m3 costs far more per item than bge-small (1024-dim, ~17x the
+// params); the offscreen document re-chunks SCORE_BATCH work down to this
+// size when the large tier is active, independent of the hardware-tier
+// chunking content-script.js already does on the way in — that keeps peak
+// tensor memory and per-round-trip latency sane for the heavier model.
+export const LARGE_MODEL_SCORE_CHUNK_SIZE = 8;
 export const CACHE_FLUSH_DEBOUNCE_MS = 5000;
 // A title that fails to embed twice is given up on (cached as permanently
 // dimmed) instead of being resent on every subsequent pass forever.
