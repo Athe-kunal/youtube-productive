@@ -20,4 +20,4 @@ Hugging Face on first use. After download, all inference runs locally
 without further network requests.
 
 ## Contact
-[Your email]
+athekunal@gmail.com
