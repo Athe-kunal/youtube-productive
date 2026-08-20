@@ -428,7 +428,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const { videoId } = message.payload;
     manualShows.add(videoId);
     const cardEl = cardByVideoId.get(videoId);
-    if (cardEl) applyDecision(cardEl, "show");
+    if (cardEl) {
+      applyDecision(cardEl, "show");
+      // The popup that triggered this sits on top of the same tab, so the
+      // scroll happens out of sight until the user closes it — but it means
+      // the unhidden card is already centered in view once they do.
+      cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
     const prior = cardState.get(videoId);
     if (prior) cardState.set(videoId, { ...prior, decision: "show" });
     sendResponse({ ok: true });

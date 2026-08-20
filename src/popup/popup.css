@@ -1,6 +1,5 @@
 body {
   width: 340px;
-  max-height: 560px;
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   color: #0f0f0f;
@@ -82,8 +81,11 @@ header {
   transform: translateX(14px);
 }
 
+/* Tall enough that "Filtered on this page" is visible without scrolling
+ * for a typical filled-in settings section — so users notice that section
+ * exists rather than only seeing Settings and the Apply button. */
 #body {
-  max-height: 520px;
+  max-height: 620px;
   overflow-y: auto;
   padding: 14px;
   box-sizing: border-box;
@@ -111,6 +113,20 @@ input[type="text"] {
   border: 1px solid #ccc;
   border-radius: 6px;
   resize: vertical;
+}
+
+.char-counter {
+  color: #909090;
+  margin: 3px 0 0 0;
+  font-size: 10.5px;
+  text-align: right;
+}
+
+.hint {
+  color: #606060;
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  line-height: 1.35;
 }
 
 .toggle-label {

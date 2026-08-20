@@ -12,7 +12,7 @@ const TOUR_STEPS = [
   { selector: "#intent", text: "Show me — describe what you want to see, in your own words." },
   {
     selector: "#avoid",
-    text: 'Avoid — describe what to skip here, not in "Show me". Models can\'t understand "no X".',
+    text: 'Avoid — describe what you\'d rather not see here, not in "Show me" above.',
   },
   { selector: "#include-chips", text: "Always show — exact keywords that force a video to show, no matter the score." },
   { selector: "#exclude-chips", text: "Always hide — exact keywords that force a video to hide, no matter the score." },
@@ -21,9 +21,14 @@ const TOUR_STEPS = [
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
+const intentCounterEl = document.getElementById("intent-counter");
+const avoidCounterEl = document.getElementById("avoid-counter");
 // const modelTierEl = document.getElementById("model-tier");
 // const modelTierStatusEl = document.getElementById("model-tier-status");
 const extensionEnabledEl = document.getElementById("extension-enabled");
+const welcomeBannerEl = document.getElementById("welcome-banner");
+const welcomeStartEl = document.getElementById("welcome-start");
+const welcomeSkipEl = document.getElementById("welcome-skip");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
@@ -46,6 +51,13 @@ function setStatus(text) {
   statusEl.textContent = text;
 }
 
+function updateCounter(el, counterEl) {
+  counterEl.textContent = `${el.maxLength - el.value.length} characters left`;
+}
+
+intentEl.addEventListener("input", () => updateCounter(intentEl, intentCounterEl));
+avoidEl.addEventListener("input", () => updateCounter(avoidEl, avoidCounterEl));
+
 function readSchedule() {
   return {
     weekday: { start: weekdayStartEl.value || "00:00", end: weekdayEndEl.value || "23:59" },
@@ -65,6 +77,15 @@ function runTour() {
 
 document.getElementById("tour-link").addEventListener("click", runTour);
 
+welcomeStartEl.addEventListener("click", () => {
+  welcomeBannerEl.hidden = true;
+  runTour();
+});
+welcomeSkipEl.addEventListener("click", () => {
+  welcomeBannerEl.hidden = true;
+  setSettings({ [STORAGE_KEYS.TOUR_SEEN]: true });
+});
+
 // let currentTier = DEFAULT_MODEL_TIER;
 //
 // function tierFromCheckbox(checked) {
@@ -76,6 +97,8 @@ async function load() {
   extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
+  updateCounter(intentEl, intentCounterEl);
+  updateCounter(avoidEl, avoidCounterEl);
   // currentTier = settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
   // modelTierEl.checked = currentTier === "large";
   includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
@@ -90,8 +113,9 @@ async function load() {
   syncScheduleRowsVisibility();
 
   if (!settings[STORAGE_KEYS.TOUR_SEEN]) {
-    // Let the page finish laying out before measuring element positions.
-    requestAnimationFrame(runTour);
+    // Show a one-line "what is this" welcome first — jumping straight into
+    // the spotlight tour on a page the user has never seen is disorienting.
+    welcomeBannerEl.hidden = false;
   }
 }
 

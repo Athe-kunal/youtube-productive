@@ -5,6 +5,8 @@ import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
+const intentCounterEl = document.getElementById("intent-counter");
+const avoidCounterEl = document.getElementById("avoid-counter");
 const extensionEnabledEl = document.getElementById("extension-enabled");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
@@ -25,6 +27,13 @@ const includeChips = createChipInput(document.getElementById("include-chips"), {
 const excludeChips = createChipInput(document.getElementById("exclude-chips"), {
   placeholder: "e.g. football, drama",
 });
+
+function updateCounter(el, counterEl) {
+  counterEl.textContent = `${el.maxLength - el.value.length} characters left`;
+}
+
+intentEl.addEventListener("input", () => updateCounter(intentEl, intentCounterEl));
+avoidEl.addEventListener("input", () => updateCounter(avoidEl, avoidCounterEl));
 
 document.getElementById("full-settings-btn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
@@ -54,6 +63,8 @@ async function loadSettings() {
   extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
   intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
   avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
+  updateCounter(intentEl, intentCounterEl);
+  updateCounter(avoidEl, avoidCounterEl);
   includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
   excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
 

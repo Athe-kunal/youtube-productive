@@ -10,7 +10,10 @@
       <div class="header-row">
         <div>
           <h1>YouTube Intent Filter</h1>
-          <p class="subtitle">Describe what you want to see. Everything runs on-device.</p>
+          <p class="subtitle">
+            A YouTube recommendation filter — we hide what you don't want, we never recommend
+            anything new. Everything runs on your device.
+          </p>
           <button type="button" id="tour-link" class="tour-link">Take the tour</button>
         </div>
         <label class="switch" title="Enable/disable the extension">
@@ -19,22 +22,34 @@
         </label>
       </div>
 
+      <div id="welcome-banner" class="welcome-banner" hidden>
+        <p>👋 We're here to help you avoid falling into the YouTube rabbit hole.</p>
+        <div class="welcome-actions">
+          <button type="button" id="welcome-skip" class="tour-skip">Skip</button>
+          <button type="button" id="welcome-start" class="tour-next">Start tour</button>
+        </div>
+      </div>
+
       <label for="intent">Show me</label>
       <textarea
         id="intent"
         rows="4"
+        maxlength="140"
         placeholder="AI research, systems, distributed training"
       ></textarea>
+      <p class="char-counter" id="intent-counter">140 characters left</p>
 
-      <label for="avoid">Avoid (optional, described in words)</label>
+      <label for="avoid">Avoid (optional)</label>
       <textarea
         id="avoid"
         rows="2"
+        maxlength="140"
         placeholder="football, celebrity drama"
       ></textarea>
+      <p class="char-counter" id="avoid-counter">140 characters left</p>
       <p class="hint">
-        Put things to avoid here, not in the "Show me" box — embedding models don't understand
-        "no X", so writing it into the intent tends to surface more of X, not less.
+        Describe what you'd rather not see. Write it here, not in "Show me" above — putting
+        "no football" up there tends to backfire and show you more football, not less.
       </p>
 
       <!-- Multilingual model tier disabled for now — sticking to the small
@@ -54,9 +69,11 @@
 
       <label>Always show (keywords)</label>
       <div id="include-chips" class="chip-container"></div>
+      <p class="hint">Type a word and press Enter — it'll turn into a tag like this.</p>
 
       <label>Always hide (keywords)</label>
       <div id="exclude-chips" class="chip-container"></div>
+      <p class="hint">Type a word and press Enter — it'll turn into a tag like this.</p>
 
       <label class="toggle-label">
         <input type="checkbox" id="schedule-enabled" />

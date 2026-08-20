@@ -23,17 +23,23 @@
         <textarea
           id="intent"
           rows="3"
+          maxlength="140"
           placeholder="AI research, systems, distributed training"
         ></textarea>
+        <p class="char-counter" id="intent-counter">140 characters left</p>
 
         <label for="avoid">Avoid</label>
-        <textarea id="avoid" rows="2" placeholder="football, celebrity drama"></textarea>
+        <textarea id="avoid" rows="2" maxlength="140" placeholder="football, celebrity drama"></textarea>
+        <p class="char-counter" id="avoid-counter">140 characters left</p>
+        <p class="hint">What you'd rather not see. Keep it separate from "Show me" above.</p>
 
         <label>Always show (keywords)</label>
         <div id="include-chips" class="chip-container"></div>
+        <p class="hint">Press Enter after each word to add it.</p>
 
         <label>Always hide (keywords)</label>
         <div id="exclude-chips" class="chip-container"></div>
+        <p class="hint">Press Enter after each word to add it.</p>
 
         <label class="toggle-label">
           <input type="checkbox" id="schedule-enabled" />
@@ -54,14 +60,14 @@
           </div>
         </div>
 
-        <button id="save">Save</button>
+        <button id="save">Apply</button>
         <span id="status" role="status"></span>
       </section>
 
       <hr />
 
       <section id="filtered-section">
-        <p class="section-heading">Filtered on this page</p>
+        <p class="section-heading">⬇️ Filtered on this page</p>
         <p id="empty-state" class="muted">Loading…</p>
         <ul id="list"></ul>
       </section>

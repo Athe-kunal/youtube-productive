@@ -76,6 +76,41 @@ h1 {
   line-height: 1.4;
 }
 
+.char-counter {
+  color: #909090;
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  text-align: right;
+}
+
+.welcome-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #f7f7f7;
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 4px 0 20px 0;
+}
+
+.welcome-banner p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.welcome-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.welcome-actions button {
+  margin-top: 0;
+}
+
 label {
   display: block;
   font-weight: 600;
