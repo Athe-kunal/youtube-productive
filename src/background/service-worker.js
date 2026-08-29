@@ -73,22 +73,38 @@ async function calibrate(intentVector, avoidVector, tier) {
 
 /**
  * Re-embeds intent/avoid text under `tier` and recalibrates against the
- * probe set — shared by SAVE_PROFILE (when the text changed) and
+ * probe set — shared by SAVE_PROFILE (when either text changed) and
  * SET_MODEL_TIER (when the model changed but the text didn't), since a
- * tier switch invalidates the old vectors' dimensionality exactly like an
- * intent text edit invalidates their meaning. Callers are responsible for
+ * tier switch invalidates the old vectors' dimensionality exactly like a
+ * text edit invalidates their meaning. Callers are responsible for
  * clearing that profile's score cache afterward (see
  * clearScoreCacheForProfile) — this function only touches vectors.
+ *
+ * `intentChanged`/`avoidChanged` let a caller that knows only one field
+ * actually changed (SAVE_PROFILE) skip re-embedding the other and reuse
+ * `prevVector`/`prevAvoidVector` instead — calibration still runs fresh
+ * either way, since it's a function of both vectors together. A tier
+ * switch invalidates both, so SET_MODEL_TIER passes both flags true and
+ * has no prior vectors to reuse.
  */
-async function reembedAndCalibrate(intentText, avoidText, tier, prevVersion) {
+async function reembedAndCalibrate({
+  intentText,
+  avoidText,
+  tier,
+  prevVersion,
+  intentChanged = true,
+  avoidChanged = true,
+  prevVector = null,
+  prevAvoidVector = null,
+}) {
   await ensureOffscreenDocument();
   // Force the model to load even if there's no intent text yet (e.g.
   // switching tiers right after install) — otherwise embedText's
   // empty-text short-circuit below would skip loading entirely, and a
   // tier switch with no visible download would look broken.
   await sendToOffscreen(MSG.ENSURE_MODEL_LOADED, { tier });
-  const vector = await embedText(intentText, tier);
-  const avoidVector = await embedText(avoidText, tier);
+  const vector = intentChanged ? await embedText(intentText, tier) : prevVector;
+  const avoidVector = avoidChanged ? await embedText(avoidText, tier) : prevAvoidVector;
   const version = (prevVersion || 0) + 1;
   const fit = vector ? await calibrate(vector, avoidVector, tier) : null;
   return { vector, avoidVector, version, calibration: fit ? { ...fit, version } : null };
@@ -157,7 +173,16 @@ onMessage((type, payload, sender, sendResponse) => {
         let calibration = profile.calibration;
 
         if (intentChanged || avoidChanged) {
-          const result = await reembedAndCalibrate(payload.intent, payload.avoidIntent, tier, version);
+          const result = await reembedAndCalibrate({
+            intentText: payload.intent,
+            avoidText: payload.avoidIntent,
+            tier,
+            prevVersion: version,
+            intentChanged,
+            avoidChanged,
+            prevVector: vector,
+            prevAvoidVector: avoidVector,
+          });
           vector = result.vector;
           avoidVector = result.avoidVector;
           version = result.version;
@@ -197,7 +222,12 @@ onMessage((type, payload, sender, sendResponse) => {
         const profiles = await getProfiles();
         const nextProfiles = [];
         for (const profile of profiles) {
-          const result = await reembedAndCalibrate(profile.intentText, profile.avoidText, tier, profile.intentVersion);
+          const result = await reembedAndCalibrate({
+            intentText: profile.intentText,
+            avoidText: profile.avoidText,
+            tier,
+            prevVersion: profile.intentVersion,
+          });
           await clearScoreCacheForProfile(profile.id);
           nextProfiles.push({
             ...profile,

@@ -19,6 +19,14 @@ export const MSG = {
 
   GET_FILTERED_VIDEOS: "GET_FILTERED_VIDEOS",
   UNHIDE_VIDEO: "UNHIDE_VIDEO",
+
+  // Broadcast by the content script whenever a card's show/dim decision
+  // changes (new scoring pass, keyword/schedule reapply, extension
+  // toggled). The popup's "Filtered on this page" list is a snapshot taken
+  // once on open (GET_FILTERED_VIDEOS is request/response, not live) — it
+  // listens for this to know when to re-fetch that snapshot instead of
+  // going stale the moment the user clicks Apply.
+  FILTER_STATE_CHANGED: "FILTER_STATE_CHANGED",
 };
 
 // chrome.runtime.sendMessage broadcasts to every extension page — options,

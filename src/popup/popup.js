@@ -144,7 +144,7 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
-chrome.runtime.onMessage.addListener((message) => {
+chrome.runtime.onMessage.addListener((message, sender) => {
   if (!message) return;
   if (message.type === MSG.MODEL_DOWNLOAD_PROGRESS) {
     statusEl.textContent = "Loading model…";
@@ -152,6 +152,13 @@ chrome.runtime.onMessage.addListener((message) => {
     statusEl.textContent = "Model ready.";
   } else if (message.type === MSG.MODEL_ERROR) {
     statusEl.textContent = `Model error: ${message.payload && message.payload.message}`;
+  } else if (message.type === MSG.FILTER_STATE_CHANGED) {
+    // The content script re-scores asynchronously after Apply — this is
+    // its "I've updated some decisions" signal, since GET_FILTERED_VIDEOS
+    // is a one-shot snapshot that would otherwise go stale the moment
+    // Apply is clicked (thumbnail hides on the page, but the popup's list
+    // still shows the pre-Apply state).
+    if (!sender.tab || sender.tab.id === currentTabId) loadFiltered();
   }
 });
 

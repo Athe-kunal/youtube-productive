@@ -33,8 +33,10 @@ const welcomeStartEl = document.getElementById("welcome-start");
 const welcomeSkipEl = document.getElementById("welcome-skip");
 const profileTabsEl = document.getElementById("profile-tabs");
 const addProfileBtn = document.getElementById("add-profile-btn");
-const renameProfileBtn = document.getElementById("rename-profile-btn");
 const deleteProfileBtn = document.getElementById("delete-profile-btn");
+
+// Stable, modern accent per profile slot (up to MAX_PROFILES = 3).
+const PROFILE_COLORS = ["#6366f1", "#ec4899", "#10b981"];
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
@@ -116,27 +118,91 @@ function loadProfileIntoForm(profile) {
   syncScheduleRowsVisibility();
 }
 
+async function commitProfileRename(profile, input, item) {
+  const name = input.value.trim();
+  item.classList.remove("editing");
+  if (!name || name === profile.name) {
+    renderProfileTabs();
+    return;
+  }
+  const updated = await updateProfileFields(profile.id, { name });
+  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
+  renderProfileTabs();
+  setStatus("Renamed.");
+}
+
 function renderProfileTabs() {
   const active = pickActiveProfile(profiles);
   profileTabsEl.innerHTML = "";
-  for (const profile of profiles) {
+  profiles.forEach((profile, index) => {
+    const color = PROFILE_COLORS[index % PROFILE_COLORS.length];
+    const isCurrent = profile.id === currentProfileId;
+
+    const item = document.createElement("div");
+    item.className = "profile-tab-item" + (isCurrent ? " active" : "");
+    item.style.setProperty("--profile-color", color);
+
     const tab = document.createElement("button");
     tab.type = "button";
-    tab.className = "profile-tab" + (profile.id === currentProfileId ? " active" : "");
+    tab.className = "profile-tab" + (isCurrent ? " active" : "");
     if (active && active.id === profile.id) {
       const dot = document.createElement("span");
       dot.className = "profile-tab-dot";
       dot.title = "Active right now";
       tab.appendChild(dot);
     }
-    tab.appendChild(document.createTextNode(profile.name));
+    const nameSpan = document.createElement("span");
+    nameSpan.className = "profile-tab-name";
+    nameSpan.textContent = profile.name;
+    tab.appendChild(nameSpan);
     tab.addEventListener("click", () => {
       currentProfileId = profile.id;
       renderProfileTabs();
       loadProfileIntoForm(currentProfile());
     });
-    profileTabsEl.appendChild(tab);
-  }
+
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "profile-edit-btn";
+    editBtn.title = "Rename profile";
+    editBtn.setAttribute("aria-label", `Rename ${profile.name}`);
+    editBtn.textContent = "✎";
+    editBtn.addEventListener("click", (event) => {
+      event.stopPropagation();
+      currentProfileId = profile.id;
+      item.classList.add("editing");
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.className = "profile-name-input";
+      input.value = profile.name;
+      input.maxLength = 40;
+      item.replaceChildren(input);
+      input.focus();
+      input.select();
+
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        commitProfileRename(profile, input, item);
+      };
+      input.addEventListener("blur", finish);
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          input.blur();
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          done = true;
+          renderProfileTabs();
+        }
+      });
+    });
+
+    item.append(tab, editBtn);
+    profileTabsEl.appendChild(item);
+  });
   addProfileBtn.disabled = profiles.length >= MAX_PROFILES;
   deleteProfileBtn.disabled = profiles.length <= 1;
 }
@@ -155,17 +221,6 @@ addProfileBtn.addEventListener("click", async () => {
   loadProfileIntoForm(currentProfile());
   setStatus("Profile added.");
   intentEl.focus();
-});
-
-renameProfileBtn.addEventListener("click", async () => {
-  const profile = currentProfile();
-  if (!profile) return;
-  const name = prompt("Profile name", profile.name);
-  if (!name || !name.trim() || name.trim() === profile.name) return;
-  const updated = await updateProfileFields(profile.id, { name: name.trim() });
-  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
-  renderProfileTabs();
-  setStatus("Renamed.");
 });
 
 deleteProfileBtn.addEventListener("click", async () => {

@@ -12,6 +12,10 @@ import { createLogger } from "../shared/log.js";
 
 const log = createLogger("content");
 
+// Local to this file — purely an implementation detail of coalescing
+// FILTER_STATE_CHANGED broadcasts (see scheduleFilterStateBroadcast).
+const FILTER_BROADCAST_DEBOUNCE_MS = 300;
+
 let observer = null;
 let globalSettings = null; // EXTENSION_ENABLED, MODEL_TIER, TOUR_SEEN — not per-profile
 let profiles = [];
@@ -88,6 +92,7 @@ function applyDecisionsForScoredItems(items) {
     });
   }
   log.log("applyDecisionsForScoredItems", { count: items.length, cutoff: cutoff.toFixed(3) });
+  scheduleFilterStateBroadcast();
 }
 
 function applyForVideoIds(videoIds, infoByVideoId, currentVersion) {
@@ -115,6 +120,20 @@ function flushCacheNow() {
   setScoreCache(plain).catch((err) => log.error("cache flush failed", err));
 }
 
+// The popup's "Filtered on this page" list is fetched once on open
+// (GET_FILTERED_VIDEOS), so it goes stale the moment the user clicks Apply
+// and this tab re-scores in the background — the thumbnail visibly hides
+// here, but a popup that's still open (or reopened before scoring
+// finishes) shows the old, pre-Apply snapshot. Debounced since a scoring
+// pass calls applyDecisionsForScoredItems once per chunk.
+let filterBroadcastTimer = null;
+function scheduleFilterStateBroadcast() {
+  clearTimeout(filterBroadcastTimer);
+  filterBroadcastTimer = setTimeout(() => {
+    chrome.runtime.sendMessage({ type: MSG.FILTER_STATE_CHANGED }).catch(() => {});
+  }, FILTER_BROADCAST_DEBOUNCE_MS);
+}
+
 // No active profile at all (none configured, or every scheduled profile's
 // window is currently closed with no always-on fallback): the extension is
 // fully off for now — whatever is currently dimmed gets shown again and no
@@ -127,6 +146,7 @@ function showAllTrackedCards() {
     const prior = cardState.get(videoId);
     if (prior) cardState.set(videoId, { ...prior, decision: "show" });
   }
+  scheduleFilterStateBroadcast();
 }
 
 async function processCardsInner() {
