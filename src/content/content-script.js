@@ -77,7 +77,13 @@ function applyDecisionsForScoredItems(items) {
     // later passes can skip re-extracting/re-scoring it entirely.
     item.cardEl.dataset.yifVersion = versionStr;
     item.cardEl.dataset.yifVideoId = item.videoId;
-    cardState.set(item.videoId, { title: item.title, channel: item.channel, score: item.score, decision });
+    cardState.set(item.videoId, {
+      title: item.title,
+      channel: item.channel,
+      score: item.score,
+      decision,
+      isShort: item.isShort,
+    });
   }
   log.log("applyDecisionsForScoredItems", { count: items.length, cutoff: cutoff.toFixed(3) });
 }
@@ -256,7 +262,14 @@ function reapplyFromCache() {
     const cached = scoreCache.get(videoId);
     const prior = cardState.get(videoId);
     if (!cached || cached.version !== currentVersion || !prior) continue;
-    scoredItems.push({ videoId, cardEl, title: prior.title, channel: prior.channel, score: cached.score });
+    scoredItems.push({
+      videoId,
+      cardEl,
+      title: prior.title,
+      channel: prior.channel,
+      score: cached.score,
+      isShort: prior.isShort,
+    });
   }
   if (scoredItems.length > 0) applyDecisionsForScoredItems(scoredItems);
 }
@@ -418,8 +431,20 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === MSG.GET_FILTERED_VIDEOS) {
     const dimmed = Array.from(cardState.entries())
       .filter(([, v]) => v.decision === "dim")
-      .map(([videoId, v]) => ({ videoId, title: v.title, channel: v.channel, score: v.score }))
-      .sort((a, b) => b.score - a.score);
+      .map(([videoId, v]) => ({ videoId, title: v.title, channel: v.channel, score: v.score, isShort: v.isShort }));
+    // Page order, not score order: a card dimmed near the top of the feed
+    // should surface at the top of the popup list too, matching where the
+    // user would actually go looking for it — not wherever its score
+    // happens to rank it.
+    dimmed.sort((a, b) => {
+      const aEl = cardByVideoId.get(a.videoId);
+      const bEl = cardByVideoId.get(b.videoId);
+      if (!aEl || !bEl) return 0;
+      const position = aEl.compareDocumentPosition(bEl);
+      if (position & Node.DOCUMENT_POSITION_FOLLOWING) return -1;
+      if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
+      return 0;
+    });
     sendResponse({ ok: true, isSupportedPage: !!pageConfig, dimmed });
     return true;
   }

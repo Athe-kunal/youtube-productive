@@ -111,9 +111,18 @@ function renderFiltered(dimmed) {
   for (const v of dimmed) {
     const li = document.createElement("li");
 
+    const infoEl = document.createElement("span");
+    infoEl.className = "row-info";
+
+    const typeBadge = document.createElement("span");
+    typeBadge.className = v.isShort ? "type-badge type-badge-short" : "type-badge type-badge-video";
+    typeBadge.textContent = v.isShort ? "Short" : "Video";
+
     const titleEl = document.createElement("span");
     titleEl.className = "row-title";
     titleEl.textContent = v.title;
+
+    infoEl.append(typeBadge, titleEl);
 
     const unhideBtn = document.createElement("button");
     unhideBtn.type = "button";
@@ -133,7 +142,7 @@ function renderFiltered(dimmed) {
       }
     });
 
-    li.append(titleEl, unhideBtn);
+    li.append(infoEl, unhideBtn);
     listEl.appendChild(li);
   }
 }
