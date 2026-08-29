@@ -19,6 +19,11 @@
 
     <div id="body">
       <section id="settings-section">
+        <label for="profile-select">Profile</label>
+        <select id="profile-select"></select>
+        <p class="hint" id="profile-hint"></p>
+        <p class="hint">Add, rename, or delete profiles from full settings (⤢).</p>
+
         <label for="intent">Show me</label>
         <textarea
           id="intent"
@@ -43,8 +48,12 @@
 
         <label class="toggle-label">
           <input type="checkbox" id="schedule-enabled" />
-          Only filter during set hours
+          Only active during set hours
         </label>
+        <p class="hint">
+          Outside these hours this profile is skipped — another matching profile (or none) takes
+          over.
+        </p>
         <div id="schedule-rows" hidden>
           <div class="schedule-row">
             <span class="schedule-label">Weekdays</span>

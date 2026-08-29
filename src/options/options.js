@@ -1,14 +1,16 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
 import { startTour } from "../shared/tour.js";
-import { getSettings, setSettings } from "../shared/storage.js";
-import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
+import { getSettings, setSettings, getProfiles, setProfiles, updateProfileFields, deleteProfile } from "../shared/storage.js";
+import { createProfile, pickActiveProfile } from "../shared/profiles.js";
+import { STORAGE_KEYS, DEFAULT_SCHEDULE, MAX_PROFILES } from "../shared/constants.js";
 // Model tier switching is disabled for now (see commented-out block below
 // and in options.html) — re-add DEFAULT_MODEL_TIER, MODEL_TIERS to the
 // import above when re-enabling it.
 
 const TOUR_STEPS = [
   { selector: ".switch", text: "Master switch — pause or resume the whole extension instantly." },
+  { selector: ".profile-tabs", text: "Profiles — up to 3, each with its own intent and active hours. Add one for each mode you switch between during the day." },
   { selector: "#intent", text: "Show me — describe what you want to see, in your own words." },
   {
     selector: "#avoid",
@@ -16,7 +18,7 @@ const TOUR_STEPS = [
   },
   { selector: "#include-chips", text: "Always show — exact keywords that force a video to show, no matter the score." },
   { selector: "#exclude-chips", text: "Always hide — exact keywords that force a video to hide, no matter the score." },
-  { selector: ".toggle-label", text: "Active hours — optionally only filter during set hours. Off by default." },
+  { selector: ".toggle-label", text: "Active hours — optionally only use this profile during set hours. Off by default." },
 ];
 
 const intentEl = document.getElementById("intent");
@@ -29,6 +31,10 @@ const extensionEnabledEl = document.getElementById("extension-enabled");
 const welcomeBannerEl = document.getElementById("welcome-banner");
 const welcomeStartEl = document.getElementById("welcome-start");
 const welcomeSkipEl = document.getElementById("welcome-skip");
+const profileTabsEl = document.getElementById("profile-tabs");
+const addProfileBtn = document.getElementById("add-profile-btn");
+const renameProfileBtn = document.getElementById("rename-profile-btn");
+const deleteProfileBtn = document.getElementById("delete-profile-btn");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
@@ -37,6 +43,9 @@ const weekendStartEl = document.getElementById("weekend-start");
 const weekendEndEl = document.getElementById("weekend-end");
 const saveBtn = document.getElementById("save");
 const statusEl = document.getElementById("status");
+
+let profiles = [];
+let currentProfileId = null;
 
 const includeChips = createChipInput(document.getElementById("include-chips"), {
   placeholder: "e.g. kubernetes, rust",
@@ -86,6 +95,90 @@ welcomeSkipEl.addEventListener("click", () => {
   setSettings({ [STORAGE_KEYS.TOUR_SEEN]: true });
 });
 
+function currentProfile() {
+  return profiles.find((p) => p.id === currentProfileId) || null;
+}
+
+function loadProfileIntoForm(profile) {
+  intentEl.value = profile.intentText || "";
+  avoidEl.value = profile.avoidText || "";
+  updateCounter(intentEl, intentCounterEl);
+  updateCounter(avoidEl, avoidCounterEl);
+  includeChips.setChips(profile.includeKeywords || []);
+  excludeChips.setChips(profile.excludeKeywords || []);
+
+  const schedule = profile.schedule || DEFAULT_SCHEDULE;
+  weekdayStartEl.value = schedule.weekday.start;
+  weekdayEndEl.value = schedule.weekday.end;
+  weekendStartEl.value = schedule.weekend.start;
+  weekendEndEl.value = schedule.weekend.end;
+  scheduleEnabledEl.checked = !!profile.scheduleEnabled;
+  syncScheduleRowsVisibility();
+}
+
+function renderProfileTabs() {
+  const active = pickActiveProfile(profiles);
+  profileTabsEl.innerHTML = "";
+  for (const profile of profiles) {
+    const tab = document.createElement("button");
+    tab.type = "button";
+    tab.className = "profile-tab" + (profile.id === currentProfileId ? " active" : "");
+    if (active && active.id === profile.id) {
+      const dot = document.createElement("span");
+      dot.className = "profile-tab-dot";
+      dot.title = "Active right now";
+      tab.appendChild(dot);
+    }
+    tab.appendChild(document.createTextNode(profile.name));
+    tab.addEventListener("click", () => {
+      currentProfileId = profile.id;
+      renderProfileTabs();
+      loadProfileIntoForm(currentProfile());
+    });
+    profileTabsEl.appendChild(tab);
+  }
+  addProfileBtn.disabled = profiles.length >= MAX_PROFILES;
+  deleteProfileBtn.disabled = profiles.length <= 1;
+}
+
+// Creating, renaming, and deleting touch no vectors, so these go straight
+// to storage (shared/storage.js) instead of round-tripping through the
+// background service worker — that hop only exists to reach the offscreen
+// model, which none of these three need.
+addProfileBtn.addEventListener("click", async () => {
+  if (profiles.length >= MAX_PROFILES) return;
+  const newProfile = createProfile(`Profile ${profiles.length + 1}`);
+  await setProfiles([...profiles, newProfile]);
+  profiles = [...profiles, newProfile];
+  currentProfileId = newProfile.id;
+  renderProfileTabs();
+  loadProfileIntoForm(currentProfile());
+  setStatus("Profile added.");
+  intentEl.focus();
+});
+
+renameProfileBtn.addEventListener("click", async () => {
+  const profile = currentProfile();
+  if (!profile) return;
+  const name = prompt("Profile name", profile.name);
+  if (!name || !name.trim() || name.trim() === profile.name) return;
+  const updated = await updateProfileFields(profile.id, { name: name.trim() });
+  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
+  renderProfileTabs();
+  setStatus("Renamed.");
+});
+
+deleteProfileBtn.addEventListener("click", async () => {
+  const profile = currentProfile();
+  if (!profile || profiles.length <= 1) return;
+  if (!confirm(`Delete "${profile.name}"? This can't be undone.`)) return;
+  profiles = await deleteProfile(profile.id);
+  currentProfileId = profiles[0].id;
+  renderProfileTabs();
+  loadProfileIntoForm(currentProfile());
+  setStatus("Deleted.");
+});
+
 // let currentTier = DEFAULT_MODEL_TIER;
 //
 // function tierFromCheckbox(checked) {
@@ -95,22 +188,14 @@ welcomeSkipEl.addEventListener("click", () => {
 async function load() {
   const settings = await getSettings();
   extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
-  intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
-  avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
-  updateCounter(intentEl, intentCounterEl);
-  updateCounter(avoidEl, avoidCounterEl);
   // currentTier = settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
   // modelTierEl.checked = currentTier === "large";
-  includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
-  excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
 
-  const schedule = settings[STORAGE_KEYS.SCHEDULE] || DEFAULT_SCHEDULE;
-  weekdayStartEl.value = schedule.weekday.start;
-  weekdayEndEl.value = schedule.weekday.end;
-  weekendStartEl.value = schedule.weekend.start;
-  weekendEndEl.value = schedule.weekend.end;
-  scheduleEnabledEl.checked = !!settings[STORAGE_KEYS.SCHEDULE_ENABLED];
-  syncScheduleRowsVisibility();
+  profiles = await getProfiles();
+  const active = pickActiveProfile(profiles);
+  currentProfileId = (active || profiles[0]).id;
+  renderProfileTabs();
+  loadProfileIntoForm(currentProfile());
 
   if (!settings[STORAGE_KEYS.TOUR_SEEN]) {
     // Show a one-line "what is this" welcome first — jumping straight into
@@ -119,18 +204,24 @@ async function load() {
   }
 }
 
-// Keyword / schedule edits are cheap: persist immediately so open YouTube
-// tabs restyle instantly via chrome.storage.onChanged, no re-embedding.
+// Keyword / schedule edits are cheap: persist straight to storage
+// (shared/storage.js) so open YouTube tabs restyle instantly via
+// chrome.storage.onChanged — no re-embedding, so no need for the
+// background round trip either.
 let liveDebounce = null;
 function scheduleLiveSave() {
   clearTimeout(liveDebounce);
   liveDebounce = setTimeout(async () => {
-    await setSettings({
-      [STORAGE_KEYS.INCLUDE_KEYWORDS]: includeChips.getChips(),
-      [STORAGE_KEYS.EXCLUDE_KEYWORDS]: excludeChips.getChips(),
-      [STORAGE_KEYS.SCHEDULE]: readSchedule(),
-      [STORAGE_KEYS.SCHEDULE_ENABLED]: scheduleEnabledEl.checked,
+    const profile = currentProfile();
+    if (!profile) return;
+    const updated = await updateProfileFields(profile.id, {
+      includeKeywords: includeChips.getChips(),
+      excludeKeywords: excludeChips.getChips(),
+      schedule: readSchedule(),
+      scheduleEnabled: scheduleEnabledEl.checked,
     });
+    profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
+    renderProfileTabs();
   }, 200);
 }
 
@@ -201,10 +292,14 @@ for (const el of [weekdayStartEl, weekdayEndEl, weekendStartEl, weekendEndEl]) {
 // });
 
 saveBtn.addEventListener("click", async () => {
+  const profile = currentProfile();
+  if (!profile) return;
   saveBtn.disabled = true;
   setStatus("Saving…");
   try {
-    const response = await sendToBackground(MSG.SAVE_SETTINGS, {
+    const response = await sendToBackground(MSG.SAVE_PROFILE, {
+      profileId: profile.id,
+      name: profile.name,
       intent: intentEl.value.trim(),
       avoidIntent: avoidEl.value.trim(),
       includeKeywords: includeChips.getChips(),
@@ -213,6 +308,8 @@ saveBtn.addEventListener("click", async () => {
       scheduleEnabled: scheduleEnabledEl.checked,
     });
     if (response && response.ok) {
+      profiles = profiles.map((p) => (p.id === profile.id ? response.profile : p));
+      renderProfileTabs();
       setStatus("Saved.");
     } else {
       setStatus(`Error: ${(response && response.error) || "unknown"}`);

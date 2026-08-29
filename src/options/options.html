@@ -30,6 +30,20 @@
         </div>
       </div>
 
+      <div class="profile-bar">
+        <div class="profile-tabs" id="profile-tabs"></div>
+        <div class="profile-bar-actions">
+          <button type="button" id="add-profile-btn" class="ghost-btn">+ Add profile</button>
+          <button type="button" id="rename-profile-btn" class="ghost-btn">Rename</button>
+          <button type="button" id="delete-profile-btn" class="ghost-btn">Delete</button>
+        </div>
+      </div>
+      <p class="hint">
+        Up to 3 profiles, each with its own intent, keywords, and active hours — e.g. one for 9-5
+        work focus and another for evenings. Whichever profile's hours match right now is used; a
+        profile with no active-hours restriction acts as the fallback when none do.
+      </p>
+
       <label for="intent">Show me</label>
       <textarea
         id="intent"
@@ -77,8 +91,12 @@
 
       <label class="toggle-label">
         <input type="checkbox" id="schedule-enabled" />
-        Only filter during set hours
+        Only active during set hours
       </label>
+      <p class="hint">
+        Outside these hours this profile is skipped — another matching profile (or the fallback
+        one) takes over instead.
+      </p>
       <div id="schedule-rows" hidden>
         <div class="schedule-row">
           <span class="schedule-label">Weekdays</span>

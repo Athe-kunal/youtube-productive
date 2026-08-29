@@ -1,15 +1,9 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { resolveDecision } from "../shared/keyword-filter.js";
 import { calibratedCutoff } from "../shared/scoring.js";
-import { isWithinSchedule } from "../shared/schedule.js";
-import { getSettings, getScoreCache, setScoreCache } from "../shared/storage.js";
-import {
-  STORAGE_KEYS,
-  DEBOUNCE_MS,
-  CACHE_FLUSH_DEBOUNCE_MS,
-  MAX_SCORE_ATTEMPTS,
-  SCHEDULE_RECHECK_MS,
-} from "../shared/constants.js";
+import { getSettings, getProfiles, getScoreCache, setScoreCache } from "../shared/storage.js";
+import { pickActiveProfile } from "../shared/profiles.js";
+import { STORAGE_KEYS, DEBOUNCE_MS, CACHE_FLUSH_DEBOUNCE_MS, MAX_SCORE_ATTEMPTS, DEFAULT_SENSITIVITY_K, SCHEDULE_RECHECK_MS } from "../shared/constants.js";
 import { ADAPTIVE_SCORE_CHUNK_SIZE, EXTRACT_YIELD_EVERY, yieldToMain } from "../shared/device.js";
 import { getPageConfig } from "./selectors.js";
 import { extractCard } from "./card-extractor.js";
@@ -19,33 +13,36 @@ import { createLogger } from "../shared/log.js";
 const log = createLogger("content");
 
 let observer = null;
-let settings = null;
+let globalSettings = null; // EXTENSION_ENABLED, MODEL_TIER, TOUR_SEEN — not per-profile
+let profiles = [];
+let activeProfile = null; // whichever profile's schedule currently matches — see shared/profiles.js
 let pageConfig = null; // home feed vs. watch-page sidebar — see selectors.js#PAGE_CONFIGS
-const scoreCache = new Map(); // videoId -> { score, version, failed? }
+const scoreCache = new Map(); // `${profileId}:${videoId}` -> { score, version, failed? }
 const cardByVideoId = new Map(); // videoId -> card element
-const cardState = new Map(); // videoId -> { title, channel, score, decision } (for the review popup)
+const cardState = new Map(); // videoId -> { title, channel, score, decision, isShort } (for the review popup)
 const failureAttempts = new Map(); // videoId -> embed attempts this page session
 // Explicit per-video "show anyway" clicks from the popup's filtered list.
 // Session-only (cleared on init/navigation) — a permanent allowlist is what
 // the "Always show" keyword field is for.
 const manualShows = new Set();
 
+function scoreCacheKey(videoId) {
+  return `${activeProfile.id}:${videoId}`;
+}
+
 async function loadState() {
-  settings = await getSettings();
+  globalSettings = await getSettings();
+  profiles = await getProfiles();
+  activeProfile = pickActiveProfile(profiles);
   const persisted = await getScoreCache();
   scoreCache.clear();
-  for (const [videoId, entry] of Object.entries(persisted)) {
-    scoreCache.set(videoId, entry);
+  for (const [key, entry] of Object.entries(persisted)) {
+    scoreCache.set(key, entry);
   }
   log.log("loadState", {
-    extensionEnabled: settings[STORAGE_KEYS.EXTENSION_ENABLED],
-    hasIntentVector: !!settings[STORAGE_KEYS.INTENT_VECTOR],
-    hasCalibration: !!settings[STORAGE_KEYS.CALIBRATION],
-    sensitivityK: settings[STORAGE_KEYS.SENSITIVITY_K],
-    includeKeywords: settings[STORAGE_KEYS.INCLUDE_KEYWORDS],
-    excludeKeywords: settings[STORAGE_KEYS.EXCLUDE_KEYWORDS],
-    scheduleEnabled: settings[STORAGE_KEYS.SCHEDULE_ENABLED],
-    schedule: settings[STORAGE_KEYS.SCHEDULE],
+    extensionEnabled: globalSettings[STORAGE_KEYS.EXTENSION_ENABLED],
+    profileCount: profiles.length,
+    activeProfile: activeProfile && { id: activeProfile.id, name: activeProfile.name },
     cachedScores: scoreCache.size,
   });
 }
@@ -55,11 +52,11 @@ async function loadState() {
 // for why a percentile cutoff dims/shows a fixed fraction regardless of
 // how relevant the feed actually is, and flickers as the feed grows.
 function applyDecisionsForScoredItems(items) {
-  const currentVersion = settings[STORAGE_KEYS.INTENT_VERSION];
-  const versionStr = String(currentVersion);
-  const calibration = settings[STORAGE_KEYS.CALIBRATION];
+  const currentVersion = activeProfile.intentVersion;
+  const versionStr = `${activeProfile.id}:${currentVersion}`;
+  const calibration = activeProfile.calibration;
   const validCalibration = calibration && calibration.version === currentVersion ? calibration : null;
-  const cutoff = calibratedCutoff(validCalibration, settings[STORAGE_KEYS.SENSITIVITY_K]);
+  const cutoff = calibratedCutoff(validCalibration, DEFAULT_SENSITIVITY_K);
 
   for (const item of items) {
     const decision = manualShows.has(item.videoId)
@@ -69,12 +66,17 @@ function applyDecisionsForScoredItems(items) {
           threshold: cutoff,
           title: item.title,
           channel: item.channel,
-          includeKeywords: settings[STORAGE_KEYS.INCLUDE_KEYWORDS],
-          excludeKeywords: settings[STORAGE_KEYS.EXCLUDE_KEYWORDS],
+          includeKeywords: activeProfile.includeKeywords,
+          excludeKeywords: activeProfile.excludeKeywords,
         });
     applyDecision(item.cardEl, decision);
-    // Marks this card as fully decided for the current intent version, so
-    // later passes can skip re-extracting/re-scoring it entirely.
+    // Marks this card as fully decided for the active profile's current
+    // intent version, so later passes can skip re-extracting/re-scoring it
+    // entirely. Namespaced by profile id (not just the version number)
+    // because each profile keeps its own independent version counter —
+    // without the id, two different profiles both sitting at version 1
+    // would look identical to this stamp and a profile switch could apply
+    // stale decisions from the wrong profile.
     item.cardEl.dataset.yifVersion = versionStr;
     item.cardEl.dataset.yifVideoId = item.videoId;
     cardState.set(item.videoId, {
@@ -91,7 +93,7 @@ function applyDecisionsForScoredItems(items) {
 function applyForVideoIds(videoIds, infoByVideoId, currentVersion) {
   const scoredItems = videoIds
     .map((videoId) => {
-      const cached = scoreCache.get(videoId);
+      const cached = scoreCache.get(scoreCacheKey(videoId));
       const info = infoByVideoId.get(videoId);
       if (!info || !cached || cached.version !== currentVersion) return null;
       return { ...info, score: cached.score };
@@ -109,14 +111,16 @@ function scheduleCacheFlush() {
 function flushCacheNow() {
   clearTimeout(cacheFlushTimer);
   const plain = {};
-  for (const [videoId, entry] of scoreCache) plain[videoId] = entry;
+  for (const [key, entry] of scoreCache) plain[key] = entry;
   setScoreCache(plain).catch((err) => log.error("cache flush failed", err));
 }
 
-// Outside the active schedule window, the extension is fully off: whatever
-// is currently dimmed gets shown again and no scoring happens. Re-checked
-// periodically (see SCHEDULE_RECHECK_MS) so a tab left open across a
-// boundary (e.g. work hours ending) doesn't need a reload to pick it up.
+// No active profile at all (none configured, or every scheduled profile's
+// window is currently closed with no always-on fallback): the extension is
+// fully off for now — whatever is currently dimmed gets shown again and no
+// scoring happens. Re-checked periodically (see SCHEDULE_RECHECK_MS) so a
+// tab left open across a boundary (e.g. work hours ending) doesn't need a
+// reload to pick it up.
 function showAllTrackedCards() {
   for (const [videoId, cardEl] of cardByVideoId) {
     applyDecision(cardEl, "show");
@@ -128,33 +132,32 @@ function showAllTrackedCards() {
 async function processCardsInner() {
   if (!pageConfig) return;
 
-  if (settings && settings[STORAGE_KEYS.EXTENSION_ENABLED] === false) {
+  if (globalSettings && globalSettings[STORAGE_KEYS.EXTENSION_ENABLED] === false) {
     log.log("processCards: extension disabled, showing everything");
     showAllTrackedCards();
     return;
   }
 
-  const scheduleEnabled = settings && settings[STORAGE_KEYS.SCHEDULE_ENABLED];
-  if (scheduleEnabled && !isWithinSchedule(settings[STORAGE_KEYS.SCHEDULE])) {
-    log.log("processCards: outside active schedule window, showing everything");
+  if (!activeProfile) {
+    log.log("processCards: no active profile right now, showing everything");
     showAllTrackedCards();
     return;
   }
 
-  if (!settings || !settings[STORAGE_KEYS.INTENT_VECTOR]) {
-    log.warn("processCards: skipped, no intent vector set yet");
+  if (!activeProfile.intentVector) {
+    log.warn("processCards: skipped, active profile has no intent vector set yet");
     return;
   }
 
   const cards = collectCandidateCards();
-  const currentVersion = settings[STORAGE_KEYS.INTENT_VERSION];
-  const versionStr = String(currentVersion);
+  const currentVersion = activeProfile.intentVersion;
+  const versionStr = `${activeProfile.id}:${currentVersion}`;
   const infos = []; // cards not yet fully decided for this version
   const toScore = [];
 
   let sinceYield = 0;
   for (const cardEl of cards) {
-    // Already decided for this intent version: re-register in
+    // Already decided for this profile+version: re-register in
     // cardByVideoId (cheap) and skip the DOM extraction + scoring work
     // entirely — this is what keeps a scroll-triggered mutation pass from
     // re-processing every card ever seen.
@@ -167,7 +170,7 @@ async function processCardsInner() {
     cardByVideoId.set(info.videoId, cardEl);
     infos.push({ ...info, cardEl });
 
-    const cached = scoreCache.get(info.videoId);
+    const cached = scoreCache.get(scoreCacheKey(info.videoId));
     if (!(cached && cached.version === currentVersion)) {
       toScore.push(info);
     }
@@ -201,7 +204,7 @@ async function processCardsInner() {
   // on weak/low-memory devices keep each WASM inference round trip short.
   for (let i = 0; i < toScore.length; i += ADAPTIVE_SCORE_CHUNK_SIZE) {
     const chunk = toScore.slice(i, i + ADAPTIVE_SCORE_CHUNK_SIZE);
-    const response = await sendToBackground(MSG.SCORE_BATCH, { videos: chunk });
+    const response = await sendToBackground(MSG.SCORE_BATCH, { videos: chunk, profileId: activeProfile.id });
     if (!response || !response.ok) {
       log.error("processCards: SCORE_BATCH failed", response && response.error);
       continue;
@@ -212,7 +215,7 @@ async function processCardsInner() {
 
     const resultIds = new Set();
     for (const { videoId, score } of response.results) {
-      scoreCache.set(videoId, { score, version: currentVersion });
+      scoreCache.set(scoreCacheKey(videoId), { score, version: currentVersion });
       resultIds.add(videoId);
       failureAttempts.delete(videoId);
     }
@@ -223,7 +226,7 @@ async function processCardsInner() {
         // Give up: cache a permanently-dimmed entry so this title stops
         // being resent on every subsequent pass. Include-keyword rules
         // still apply on top of this in resolveDecision.
-        scoreCache.set(item.videoId, { score: -Infinity, version: currentVersion, failed: true });
+        scoreCache.set(scoreCacheKey(item.videoId), { score: -Infinity, version: currentVersion, failed: true });
         failureAttempts.delete(item.videoId);
       } else {
         failureAttempts.set(item.videoId, attempts);
@@ -256,20 +259,17 @@ async function runProcessCards() {
 }
 
 function reapplyFromCache() {
-  const currentVersion = settings[STORAGE_KEYS.INTENT_VERSION];
+  if (!activeProfile) {
+    showAllTrackedCards();
+    return;
+  }
+  const currentVersion = activeProfile.intentVersion;
   const scoredItems = [];
   for (const [videoId, cardEl] of cardByVideoId) {
-    const cached = scoreCache.get(videoId);
+    const cached = scoreCache.get(scoreCacheKey(videoId));
     const prior = cardState.get(videoId);
     if (!cached || cached.version !== currentVersion || !prior) continue;
-    scoredItems.push({
-      videoId,
-      cardEl,
-      title: prior.title,
-      channel: prior.channel,
-      score: cached.score,
-      isShort: prior.isShort,
-    });
+    scoredItems.push({ videoId, cardEl, title: prior.title, channel: prior.channel, score: cached.score, isShort: prior.isShort });
   }
   if (scoredItems.length > 0) applyDecisionsForScoredItems(scoredItems);
 }
@@ -287,9 +287,9 @@ function scheduleProcess() {
 // accumulated cards) that full-document re-scan is the kind of O(n) work
 // that's invisible on a fast machine and a real source of jank on a slow
 // one. `null` means "do a full scan" — used for init and other passes that
-// aren't triggered by a specific DOM addition (e.g. intent change, the
-// periodic schedule recheck) where a targeted root set isn't available and
-// correctness requires re-evaluating everything anyway.
+// aren't triggered by a specific DOM addition (e.g. active profile change,
+// the periodic schedule recheck) where a targeted root set isn't available
+// and correctness requires re-evaluating everything anyway.
 let pendingRoots = null;
 
 function collectCandidateCards() {
@@ -383,47 +383,39 @@ async function init() {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area !== "local" || !settings) return;
-  let relevant = false;
-  for (const key of [
-    STORAGE_KEYS.SENSITIVITY_K,
-    STORAGE_KEYS.INCLUDE_KEYWORDS,
-    STORAGE_KEYS.EXCLUDE_KEYWORDS,
-    STORAGE_KEYS.INTENT_VECTOR,
-    STORAGE_KEYS.INTENT_VERSION,
-    STORAGE_KEYS.CALIBRATION,
-    STORAGE_KEYS.SCHEDULE,
-    STORAGE_KEYS.SCHEDULE_ENABLED,
-    STORAGE_KEYS.EXTENSION_ENABLED,
-  ]) {
-    if (key in changes) {
-      settings[key] = changes[key].newValue;
-      relevant = true;
+  if (area !== "local") return;
+
+  let needsFullScan = false;
+
+  if (STORAGE_KEYS.PROFILES in changes) {
+    profiles = changes[STORAGE_KEYS.PROFILES].newValue || [];
+    const nextActive = pickActiveProfile(profiles);
+    const activeChanged =
+      (activeProfile ? activeProfile.id : null) !== (nextActive ? nextActive.id : null) ||
+      (activeProfile && nextActive && activeProfile.intentVersion !== nextActive.intentVersion);
+    activeProfile = nextActive;
+    if (activeChanged) {
+      needsFullScan = true;
+    } else if (activeProfile) {
+      // Same profile, same intent version — only keywords/schedule
+      // changed, which don't need a model round trip to re-apply.
+      reapplyFromCache();
     }
   }
-  if (!relevant) return;
 
-  if (STORAGE_KEYS.INTENT_VERSION in changes) {
-    // New intent embedding: cached scores are stale, re-score everything.
-    // Not driven by a DOM mutation, so there's no added-node root to scope
-    // to — every card already on the page needs re-evaluating.
-    scoreCache.clear();
-    failureAttempts.clear();
+  if (!globalSettings) return;
+
+  if (STORAGE_KEYS.EXTENSION_ENABLED in changes) {
+    globalSettings[STORAGE_KEYS.EXTENSION_ENABLED] = changes[STORAGE_KEYS.EXTENSION_ENABLED].newValue;
+    needsFullScan = true;
+  }
+  if (STORAGE_KEYS.MODEL_TIER in changes) {
+    globalSettings[STORAGE_KEYS.MODEL_TIER] = changes[STORAGE_KEYS.MODEL_TIER].newValue;
+  }
+
+  if (needsFullScan) {
     pendingRoots = null;
     scheduleProcess();
-  } else if (
-    STORAGE_KEYS.SCHEDULE in changes ||
-    STORAGE_KEYS.SCHEDULE_ENABLED in changes ||
-    STORAGE_KEYS.EXTENSION_ENABLED in changes
-  ) {
-    // Needs the full pass, not just a cache reapply — turning back on/
-    // entering the active window may need to score cards for the first
-    // time, and turning off/leaving needs to show everything back rather
-    // than restyle from scores. Same reasoning as above: force a full scan.
-    pendingRoots = null;
-    scheduleProcess();
-  } else {
-    reapplyFromCache();
   }
 });
 
@@ -445,7 +437,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       if (position & Node.DOCUMENT_POSITION_PRECEDING) return 1;
       return 0;
     });
-    sendResponse({ ok: true, isSupportedPage: !!pageConfig, dimmed });
+    sendResponse({
+      ok: true,
+      isSupportedPage: !!pageConfig,
+      dimmed,
+      activeProfile: activeProfile && { id: activeProfile.id, name: activeProfile.name },
+    });
     return true;
   }
 
@@ -472,12 +469,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 window.addEventListener("pagehide", flushCacheNow);
 
 // A tab left open across a schedule boundary (e.g. work hours ending at
-// 17:00) has no other trigger to re-evaluate — nothing in the DOM changes
-// on its own at that moment.
+// 17:00, or one profile's window handing off to another's) has no other
+// trigger to re-evaluate — nothing in the DOM changes on its own at that
+// moment. Only forces a rescan when the active profile actually changed,
+// rather than unconditionally re-walking every card on the page every
+// minute regardless of whether anything crossed a boundary.
 setInterval(() => {
-  if (!pageConfig) return;
-  // Not driven by a DOM mutation — force a full scan so a boundary crossing
-  // is picked up for cards already on the page, not just newly added ones.
+  if (!pageConfig || profiles.length === 0) return;
+  const nextActive = pickActiveProfile(profiles);
+  const changed = (activeProfile ? activeProfile.id : null) !== (nextActive ? nextActive.id : null);
+  if (!changed) return;
+  activeProfile = nextActive;
   pendingRoots = null;
   scheduleProcess();
 }, SCHEDULE_RECHECK_MS);

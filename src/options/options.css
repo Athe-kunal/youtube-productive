@@ -76,6 +76,77 @@ h1 {
   line-height: 1.4;
 }
 
+.profile-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.profile-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.profile-tab {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  padding: 6px 14px;
+  border: 1px solid #ccc;
+  border-radius: 16px;
+  background: white;
+  color: #444;
+  cursor: pointer;
+  margin-top: 0;
+}
+
+.profile-tab.active {
+  background: #0f0f0f;
+  color: white;
+  border-color: #0f0f0f;
+}
+
+.profile-tab .profile-tab-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #1e8e3e;
+  margin-right: 6px;
+}
+
+.profile-bar-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ghost-btn {
+  margin-top: 0;
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  background: none;
+  color: #444;
+  border: 1px solid #ccc;
+  border-radius: 16px;
+  cursor: pointer;
+}
+
+.ghost-btn:hover {
+  background: #f0f0f0;
+}
+
+.ghost-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+  background: none;
+}
+
 .char-counter {
   color: #909090;
   margin: 4px 0 0 0;

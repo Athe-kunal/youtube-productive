@@ -1,6 +1,7 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
-import { getSettings, setSettings } from "../shared/storage.js";
+import { getSettings, setSettings, getProfiles } from "../shared/storage.js";
+import { pickActiveProfile } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 
 const intentEl = document.getElementById("intent");
@@ -8,6 +9,8 @@ const avoidEl = document.getElementById("avoid");
 const intentCounterEl = document.getElementById("intent-counter");
 const avoidCounterEl = document.getElementById("avoid-counter");
 const extensionEnabledEl = document.getElementById("extension-enabled");
+const profileSelectEl = document.getElementById("profile-select");
+const profileHintEl = document.getElementById("profile-hint");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
 const scheduleRowsEl = document.getElementById("schedule-rows");
 const weekdayStartEl = document.getElementById("weekday-start");
@@ -20,6 +23,8 @@ const emptyState = document.getElementById("empty-state");
 const listEl = document.getElementById("list");
 
 let currentTabId = null;
+let profiles = [];
+let currentProfileId = null;
 
 const includeChips = createChipInput(document.getElementById("include-chips"), {
   placeholder: "e.g. kubernetes, rust",
@@ -56,32 +61,69 @@ function syncScheduleRowsVisibility() {
   scheduleRowsEl.hidden = !scheduleEnabledEl.checked;
 }
 
-scheduleEnabledEl.addEventListener("change", syncScheduleRowsVisibility);
+function currentProfile() {
+  return profiles.find((p) => p.id === currentProfileId) || null;
+}
 
-async function loadSettings() {
-  const settings = await getSettings();
-  extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
-  intentEl.value = settings[STORAGE_KEYS.INTENT_TEXT] || "";
-  avoidEl.value = settings[STORAGE_KEYS.AVOID_TEXT] || "";
+function loadProfileIntoForm(profile) {
+  intentEl.value = profile.intentText || "";
+  avoidEl.value = profile.avoidText || "";
   updateCounter(intentEl, intentCounterEl);
   updateCounter(avoidEl, avoidCounterEl);
-  includeChips.setChips(settings[STORAGE_KEYS.INCLUDE_KEYWORDS] || []);
-  excludeChips.setChips(settings[STORAGE_KEYS.EXCLUDE_KEYWORDS] || []);
+  includeChips.setChips(profile.includeKeywords || []);
+  excludeChips.setChips(profile.excludeKeywords || []);
 
-  const schedule = settings[STORAGE_KEYS.SCHEDULE] || DEFAULT_SCHEDULE;
+  const schedule = profile.schedule || DEFAULT_SCHEDULE;
   weekdayStartEl.value = schedule.weekday.start;
   weekdayEndEl.value = schedule.weekday.end;
   weekendStartEl.value = schedule.weekend.start;
   weekendEndEl.value = schedule.weekend.end;
-  scheduleEnabledEl.checked = !!settings[STORAGE_KEYS.SCHEDULE_ENABLED];
+  scheduleEnabledEl.checked = !!profile.scheduleEnabled;
   syncScheduleRowsVisibility();
+
+  const active = pickActiveProfile(profiles);
+  profileHintEl.textContent =
+    active && active.id === profile.id ? "Active right now." : "Not active right now.";
+}
+
+function renderProfileOptions() {
+  const active = pickActiveProfile(profiles);
+  profileSelectEl.innerHTML = "";
+  for (const profile of profiles) {
+    const option = document.createElement("option");
+    option.value = profile.id;
+    option.textContent = active && active.id === profile.id ? `${profile.name} (active)` : profile.name;
+    profileSelectEl.appendChild(option);
+  }
+  profileSelectEl.value = currentProfileId;
+}
+
+profileSelectEl.addEventListener("change", () => {
+  currentProfileId = profileSelectEl.value;
+  const profile = currentProfile();
+  if (profile) loadProfileIntoForm(profile);
+});
+
+async function loadSettings() {
+  const settings = await getSettings();
+  extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
+
+  profiles = await getProfiles();
+  const active = pickActiveProfile(profiles);
+  currentProfileId = (active || profiles[0]).id;
+  renderProfileOptions();
+  loadProfileIntoForm(currentProfile());
 }
 
 saveBtn.addEventListener("click", async () => {
+  const profile = currentProfile();
+  if (!profile) return;
   saveBtn.disabled = true;
   statusEl.textContent = "Saving…";
   try {
-    const response = await sendToBackground(MSG.SAVE_SETTINGS, {
+    const response = await sendToBackground(MSG.SAVE_PROFILE, {
+      profileId: profile.id,
+      name: profile.name,
       intent: intentEl.value.trim(),
       avoidIntent: avoidEl.value.trim(),
       includeKeywords: includeChips.getChips(),
@@ -89,7 +131,14 @@ saveBtn.addEventListener("click", async () => {
       schedule: readSchedule(),
       scheduleEnabled: scheduleEnabledEl.checked,
     });
-    statusEl.textContent = response && response.ok ? "Saved." : `Error: ${(response && response.error) || "unknown"}`;
+    if (response && response.ok) {
+      statusEl.textContent = "Saved.";
+      profiles = profiles.map((p) => (p.id === profile.id ? response.profile : p));
+      renderProfileOptions();
+      loadProfileIntoForm(currentProfile());
+    } else {
+      statusEl.textContent = `Error: ${(response && response.error) || "unknown"}`;
+    }
   } finally {
     saveBtn.disabled = false;
   }

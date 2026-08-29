@@ -5,14 +5,16 @@ export const MSG = {
   MODEL_ERROR: "MODEL_ERROR",
 
   EMBED_INTENT: "EMBED_INTENT",
-  EMBED_INTENT_RESULT: "EMBED_INTENT_RESULT",
 
   SCORE_BATCH: "SCORE_BATCH",
-  SCORE_RESULTS: "SCORE_RESULTS",
 
-  SAVE_SETTINGS: "SAVE_SETTINGS",
-  SETTINGS_SAVED: "SETTINGS_SAVED",
-  EMBEDDING_ERROR: "EMBEDDING_ERROR",
+  // Updates an existing profile's intent/avoid text (plus whatever else is
+  // in the payload) and re-embeds/recalibrates only if that text actually
+  // changed. Creating, renaming, and deleting a profile touch no vectors,
+  // so those go straight through shared/storage.js instead — no need to
+  // round-trip through the background service worker just to reach
+  // storage it already has direct access to.
+  SAVE_PROFILE: "SAVE_PROFILE",
   SET_MODEL_TIER: "SET_MODEL_TIER",
 
   GET_FILTERED_VIDEOS: "GET_FILTERED_VIDEOS",
@@ -22,7 +24,7 @@ export const MSG = {
 // chrome.runtime.sendMessage broadcasts to every extension page — options,
 // popup, offscreen, and the sending context's own listeners. Messages that
 // expect exactly one handler to respond (background's SCORE_BATCH/
-// SAVE_SETTINGS, offscreen's SCORE_BATCH/EMBED_INTENT) carry a `target` so
+// SAVE_PROFILE, offscreen's SCORE_BATCH/EMBED_INTENT) carry a `target` so
 // only the intended listener acts on them; everyone else bails via the
 // `target` filter in onMessage. Without this, background broadcasting a
 // message to offscreen also re-enters background's own listener for the
