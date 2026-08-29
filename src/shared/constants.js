@@ -39,66 +39,69 @@ export const BGE_QUERY_PREFIX = "Represent this sentence for searching relevant 
 export const AVOID_LAMBDA = 0.75;
 
 export const STORAGE_KEYS = {
+  // Legacy single-profile keys. No longer written — storage.js#getProfiles
+  // reads these once, on a fresh install with no PROFILES key yet, to carry
+  // an existing user's setup forward into "Profile 1" rather than losing it.
+  // Do not add new uses of these.
   INTENT_TEXT: "yif_intent_text",
   INTENT_VECTOR: "yif_intent_vector",
   AVOID_TEXT: "yif_avoid_text",
   AVOID_VECTOR: "yif_avoid_vector",
   INTENT_VERSION: "yif_intent_version",
-  // Calibration turns raw margin scores (which don't transfer across
-  // intents) into an absolute cutoff: { mean, std, version }, fit once on
-  // save against a fixed probe title set. See shared/probe-titles.js.
   CALIBRATION: "yif_calibration",
-  // Cutoff is mean + SENSITIVITY_K * std. Renamed from the old "keep
-  // fraction" THRESHOLD key (percentile-based) so upgrading users fall
-  // back to the default rather than having an old fraction silently
-  // reinterpreted as a std-dev multiplier.
-  SENSITIVITY_K: "yif_sensitivity_k",
   INCLUDE_KEYWORDS: "yif_include_keywords",
   EXCLUDE_KEYWORDS: "yif_exclude_keywords",
-  // Which entry in MODEL_TIERS is active. Switching tiers changes the
-  // embedding dimension, so it invalidates INTENT_VECTOR/AVOID_VECTOR/
-  // CALIBRATION/SCORE_CACHE exactly like an intent text change does.
-  MODEL_TIER: "yif_model_tier",
-  SCORE_CACHE: "yif_score_cache",
-  // { weekday: {start, end}, weekend: {start, end} }, "HH:MM" 24h strings.
-  // Only enforced when SCHEDULE_ENABLED is true — see shared/schedule.js.
   SCHEDULE: "yif_schedule",
-  // Opt-in toggle. Off by default: filtering runs all the time until the
-  // user explicitly turns scheduling on, rather than an always-on "all
-  // day" window that's indistinguishable from off in the UI.
   SCHEDULE_ENABLED: "yif_schedule_enabled",
+
+  // Array of up to MAX_PROFILES profile objects — see shared/profiles.js
+  // for the shape and shared/schedule.js for how each profile's own
+  // schedule is evaluated. Replaces all the legacy keys above: each
+  // profile now carries its own intent/avoid/keywords/schedule instead of
+  // there being one global set.
+  PROFILES: "yif_profiles",
+
+  // Which entry in MODEL_TIERS is active. Global, not per-profile —
+  // switching tiers re-embeds every profile's vectors (see
+  // background/service-worker.js#SET_MODEL_TIER) since it changes the
+  // embedding dimension.
+  MODEL_TIER: "yif_model_tier",
+  // videoId-or-`${profileId}:${videoId}` -> { score, version }. Namespaced
+  // by profile so two profiles with different intents never collide on the
+  // same cached score for the same video.
+  SCORE_CACHE: "yif_score_cache",
   // Master kill switch — off means show everything, no scoring, no
-  // observer work, regardless of intent/schedule/keywords.
+  // observer work, regardless of which profile is active.
   EXTENSION_ENABLED: "yif_extension_enabled",
   // Whether the first-install settings tour has been shown/skipped.
   TOUR_SEEN: "yif_tour_seen",
 };
 
+export const MAX_PROFILES = 3;
+
+// Cutoff is mean + SENSITIVITY_K * std over calibration (see
+// shared/scoring.js#calibratedCutoff). Fixed rather than user-tunable — a
+// three-way "Show more / Balanced / Show less" control turned out to be
+// more confusing than useful, since its effect depends on calibration the
+// user can't see — so this lives only as a constant, not a storage key.
 export const DEFAULT_SENSITIVITY_K = 0.25;
+
 export const DEFAULT_SCHEDULE = {
   weekday: { start: "09:00", end: "17:00" },
   weekend: { start: "09:00", end: "17:00" },
 };
+
+// Global settings only — everything that used to live here for intent/
+// keywords/schedule is now per-profile (see STORAGE_KEYS.PROFILES).
 export const DEFAULT_SETTINGS = {
-  [STORAGE_KEYS.INTENT_TEXT]: "",
-  [STORAGE_KEYS.INTENT_VECTOR]: null,
-  [STORAGE_KEYS.AVOID_TEXT]: "",
-  [STORAGE_KEYS.AVOID_VECTOR]: null,
-  [STORAGE_KEYS.INTENT_VERSION]: 0,
-  [STORAGE_KEYS.CALIBRATION]: null,
-  [STORAGE_KEYS.SENSITIVITY_K]: DEFAULT_SENSITIVITY_K,
-  [STORAGE_KEYS.INCLUDE_KEYWORDS]: [],
-  [STORAGE_KEYS.EXCLUDE_KEYWORDS]: [],
   [STORAGE_KEYS.MODEL_TIER]: DEFAULT_MODEL_TIER,
-  [STORAGE_KEYS.SCHEDULE]: DEFAULT_SCHEDULE,
-  [STORAGE_KEYS.SCHEDULE_ENABLED]: false,
   [STORAGE_KEYS.EXTENSION_ENABLED]: true,
   [STORAGE_KEYS.TOUR_SEEN]: false,
 };
 
-// How often an already-open tab re-checks whether it just entered/left the
-// active schedule window, so a long-lived tab doesn't need a page reload
-// to pick up a boundary crossing (e.g. work hours ending at 17:00).
+// How often an already-open tab re-checks whether the active profile just
+// changed (a schedule boundary crossing), so a long-lived tab doesn't need
+// a page reload to pick it up.
 export const SCHEDULE_RECHECK_MS = 60000;
 
 export const DEBOUNCE_MS = 150;

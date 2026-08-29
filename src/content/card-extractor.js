@@ -1,5 +1,10 @@
 import { TITLE_SELECTORS, CHANNEL_SELECTORS, LINK_SELECTORS, SKIP_TAGS, SKIP_SELECTORS } from "./selectors.js";
 
+// Computed once at module load rather than on every extractCard() call —
+// SKIP_TAGS never changes, so spreading the Set into an array and
+// lowercasing each entry on every single card, every pass, was pure waste.
+const SKIP_TAG_QUERY_SELECTORS = [...SKIP_TAGS].map((tag) => tag.toLowerCase());
+
 function queryFirst(root, selectors) {
   for (const selector of selectors) {
     const el = root.querySelector(selector);
@@ -29,7 +34,7 @@ function extractVideoId(cardEl) {
 export function extractCard(cardEl) {
   try {
     if (SKIP_TAGS.has(cardEl.tagName)) return null;
-    if ([...SKIP_TAGS].some((tag) => cardEl.querySelector(tag.toLowerCase()))) return null;
+    if (SKIP_TAG_QUERY_SELECTORS.some((selector) => cardEl.querySelector(selector))) return null;
     if (SKIP_SELECTORS.some((selector) => cardEl.querySelector(selector))) return null;
 
     const titleEl = queryFirst(cardEl, TITLE_SELECTORS);

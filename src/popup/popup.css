@@ -104,7 +104,8 @@ label:first-child {
 }
 
 textarea,
-input[type="text"] {
+input[type="text"],
+select {
   width: 100%;
   box-sizing: border-box;
   font-family: inherit;
@@ -228,9 +229,39 @@ hr {
   font-size: 12.5px;
 }
 
+#list li .row-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
 #list li .row-title {
   color: #0f0f0f;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.type-badge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  padding: 2px 6px;
+  border-radius: 8px;
+}
+
+.type-badge-video {
+  background: #e8f0fe;
+  color: #1a56db;
+}
+
+.type-badge-short {
+  background: #fde8ef;
+  color: #c4126b;
 }
 
 .unhide-btn {

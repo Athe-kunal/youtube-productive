@@ -1,6 +1,14 @@
 import { MSG, onMessage, sendToOffscreen } from "../shared/messaging.js";
-import { getSettings, setSettings, getScoreCache, clearScoreCache, setScoreCache } from "../shared/storage.js";
-import { STORAGE_KEYS, DEFAULT_SCHEDULE, DEFAULT_SENSITIVITY_K, DEFAULT_MODEL_TIER } from "../shared/constants.js";
+import {
+  getSettings,
+  setSettings,
+  getProfiles,
+  setProfiles,
+  getScoreCache,
+  setScoreCache,
+  clearScoreCacheForProfile,
+} from "../shared/storage.js";
+import { STORAGE_KEYS, DEFAULT_MODEL_TIER } from "../shared/constants.js";
 import { computeCalibration } from "../shared/scoring.js";
 import { PROBE_TITLES } from "../shared/probe-titles.js";
 
@@ -64,11 +72,13 @@ async function calibrate(intentVector, avoidVector, tier) {
 }
 
 /**
- * Re-embeds the intent/avoid text under `tier` and recalibrates against
- * the probe set — shared by SAVE_SETTINGS (when the text changed) and
+ * Re-embeds intent/avoid text under `tier` and recalibrates against the
+ * probe set — shared by SAVE_PROFILE (when the text changed) and
  * SET_MODEL_TIER (when the model changed but the text didn't), since a
  * tier switch invalidates the old vectors' dimensionality exactly like an
- * intent text edit invalidates their meaning.
+ * intent text edit invalidates their meaning. Callers are responsible for
+ * clearing that profile's score cache afterward (see
+ * clearScoreCacheForProfile) — this function only touches vectors.
  */
 async function reembedAndCalibrate(intentText, avoidText, tier, prevVersion) {
   await ensureOffscreenDocument();
@@ -80,9 +90,15 @@ async function reembedAndCalibrate(intentText, avoidText, tier, prevVersion) {
   const vector = await embedText(intentText, tier);
   const avoidVector = await embedText(avoidText, tier);
   const version = (prevVersion || 0) + 1;
-  await clearScoreCache();
   const fit = vector ? await calibrate(vector, avoidVector, tier) : null;
   return { vector, avoidVector, version, calibration: fit ? { ...fit, version } : null };
+}
+
+// Keywords are matched lowercase (see shared/keyword-filter.js) — normalize
+// here too rather than only trusting the chip UI, so that invariant holds
+// regardless of caller.
+function normalizeKeywords(list) {
+  return (list || []).map((k) => (k || "").trim().toLowerCase()).filter(Boolean);
 }
 
 onMessage((type, payload, sender, sendResponse) => {
@@ -90,16 +106,15 @@ onMessage((type, payload, sender, sendResponse) => {
     (async () => {
       try {
         await ensureOffscreenDocument();
-        const settings = await getSettings();
-        const intentVector = settings[STORAGE_KEYS.INTENT_VECTOR];
-        const avoidVector = settings[STORAGE_KEYS.AVOID_VECTOR];
-        if (!intentVector) {
+        const [profiles, settings] = await Promise.all([getProfiles(), getSettings()]);
+        const profile = profiles.find((p) => p.id === payload.profileId);
+        if (!profile || !profile.intentVector) {
           sendResponse({ ok: false, error: "No intent set yet." });
           return;
         }
         const response = await sendToOffscreen(MSG.SCORE_BATCH, {
-          intentVector,
-          avoidVector,
+          intentVector: profile.intentVector,
+          avoidVector: profile.avoidVector,
           tier: settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER,
           videos: payload.videos,
         });
@@ -108,9 +123,9 @@ onMessage((type, payload, sender, sendResponse) => {
           return;
         }
         const cache = await getScoreCache();
-        const version = settings[STORAGE_KEYS.INTENT_VERSION];
+        const prefix = `${profile.id}:`;
         for (const r of response.results) {
-          cache[r.videoId] = { score: r.score, version };
+          cache[prefix + r.videoId] = { score: r.score, version: profile.intentVersion };
         }
         await setScoreCache(cache);
         sendResponse({ ok: true, results: response.results, failedCount: response.failedCount });
@@ -121,18 +136,25 @@ onMessage((type, payload, sender, sendResponse) => {
     return true;
   }
 
-  if (type === MSG.SAVE_SETTINGS) {
+  if (type === MSG.SAVE_PROFILE) {
     (async () => {
       try {
-        const prev = await getSettings();
-        const intentChanged = payload.intent !== prev[STORAGE_KEYS.INTENT_TEXT];
-        const avoidChanged = (payload.avoidIntent || "") !== (prev[STORAGE_KEYS.AVOID_TEXT] || "");
-        const tier = prev[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
+        const profiles = await getProfiles();
+        const profile = profiles.find((p) => p.id === payload.profileId);
+        if (!profile) {
+          sendResponse({ ok: false, error: "Profile not found." });
+          return;
+        }
+        const settings = await getSettings();
+        const tier = settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
 
-        let vector = prev[STORAGE_KEYS.INTENT_VECTOR];
-        let avoidVector = prev[STORAGE_KEYS.AVOID_VECTOR] || null;
-        let version = prev[STORAGE_KEYS.INTENT_VERSION];
-        let calibration = prev[STORAGE_KEYS.CALIBRATION] || null;
+        const intentChanged = payload.intent !== profile.intentText;
+        const avoidChanged = (payload.avoidIntent || "") !== (profile.avoidText || "");
+
+        let vector = profile.intentVector;
+        let avoidVector = profile.avoidVector;
+        let version = profile.intentVersion;
+        let calibration = profile.calibration;
 
         if (intentChanged || avoidChanged) {
           const result = await reembedAndCalibrate(payload.intent, payload.avoidIntent, tier, version);
@@ -140,27 +162,27 @@ onMessage((type, payload, sender, sendResponse) => {
           avoidVector = result.avoidVector;
           version = result.version;
           calibration = result.calibration;
+          await clearScoreCacheForProfile(profile.id);
         }
 
-        await setSettings({
-          [STORAGE_KEYS.INTENT_TEXT]: payload.intent,
-          [STORAGE_KEYS.INTENT_VECTOR]: vector,
-          [STORAGE_KEYS.AVOID_TEXT]: payload.avoidIntent || "",
-          [STORAGE_KEYS.AVOID_VECTOR]: avoidVector,
-          [STORAGE_KEYS.INTENT_VERSION]: version,
-          [STORAGE_KEYS.CALIBRATION]: calibration,
-          // Fixed rather than user-tunable — the three-way "Show more /
-          // Balanced / Show less" control turned out to be more confusing
-          // than useful, since its effect depends on calibration the user
-          // can't see.
-          [STORAGE_KEYS.SENSITIVITY_K]: DEFAULT_SENSITIVITY_K,
-          [STORAGE_KEYS.INCLUDE_KEYWORDS]: payload.includeKeywords,
-          [STORAGE_KEYS.EXCLUDE_KEYWORDS]: payload.excludeKeywords,
-          [STORAGE_KEYS.SCHEDULE]: payload.schedule || DEFAULT_SCHEDULE,
-          [STORAGE_KEYS.SCHEDULE_ENABLED]: !!payload.scheduleEnabled,
-        });
+        const updated = {
+          ...profile,
+          name: payload.name || profile.name,
+          intentText: payload.intent,
+          intentVector: vector,
+          avoidText: payload.avoidIntent || "",
+          avoidVector,
+          intentVersion: version,
+          calibration,
+          includeKeywords: normalizeKeywords(payload.includeKeywords),
+          excludeKeywords: normalizeKeywords(payload.excludeKeywords),
+          schedule: payload.schedule || profile.schedule,
+          scheduleEnabled: !!payload.scheduleEnabled,
+        };
 
-        sendResponse({ ok: true });
+        await setProfiles(profiles.map((p) => (p.id === updated.id ? updated : p)));
+
+        sendResponse({ ok: true, profile: updated });
       } catch (err) {
         sendResponse({ ok: false, error: String(err) });
       }
@@ -171,22 +193,22 @@ onMessage((type, payload, sender, sendResponse) => {
   if (type === MSG.SET_MODEL_TIER) {
     (async () => {
       try {
-        const prev = await getSettings();
         const tier = payload.tier;
-        const result = await reembedAndCalibrate(
-          prev[STORAGE_KEYS.INTENT_TEXT],
-          prev[STORAGE_KEYS.AVOID_TEXT],
-          tier,
-          prev[STORAGE_KEYS.INTENT_VERSION]
-        );
-
-        await setSettings({
-          [STORAGE_KEYS.MODEL_TIER]: tier,
-          [STORAGE_KEYS.INTENT_VECTOR]: result.vector,
-          [STORAGE_KEYS.AVOID_VECTOR]: result.avoidVector,
-          [STORAGE_KEYS.INTENT_VERSION]: result.version,
-          [STORAGE_KEYS.CALIBRATION]: result.calibration,
-        });
+        const profiles = await getProfiles();
+        const nextProfiles = [];
+        for (const profile of profiles) {
+          const result = await reembedAndCalibrate(profile.intentText, profile.avoidText, tier, profile.intentVersion);
+          await clearScoreCacheForProfile(profile.id);
+          nextProfiles.push({
+            ...profile,
+            intentVector: result.vector,
+            avoidVector: result.avoidVector,
+            intentVersion: result.version,
+            calibration: result.calibration,
+          });
+        }
+        await setProfiles(nextProfiles);
+        await setSettings({ [STORAGE_KEYS.MODEL_TIER]: tier });
 
         sendResponse({ ok: true });
       } catch (err) {
