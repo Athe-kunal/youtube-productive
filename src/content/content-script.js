@@ -180,13 +180,29 @@ async function processCardsInner() {
     // Already decided for this profile+version: re-register in
     // cardByVideoId (cheap) and skip the DOM extraction + scoring work
     // entirely — this is what keeps a scroll-triggered mutation pass from
-    // re-processing every card ever seen.
-    if (cardEl.dataset.yifVersion === versionStr && cardEl.dataset.yifVideoId) {
-      cardByVideoId.set(cardEl.dataset.yifVideoId, cardEl);
+    // re-processing every card ever seen. yifVideoId is absent for the
+    // extraction-failure stamp set below, so this also catches "already
+    // gave up on this one" without re-touching it.
+    if (cardEl.dataset.yifVersion === versionStr) {
+      if (cardEl.dataset.yifVideoId) cardByVideoId.set(cardEl.dataset.yifVideoId, cardEl);
       continue;
     }
+    // Hide first, reveal on a "show" decision — not the other way around.
+    // A card sits here, at worst, for one synchronous extraction call plus
+    // however long its SCORE_BATCH round trip takes; showing it first and
+    // only dimming the rejects would flash every unfiltered thumbnail
+    // (title, channel, everything) for that whole window instead.
+    applyDecision(cardEl, "dim");
+
     const info = extractCard(cardEl);
-    if (!info) continue;
+    if (!info) {
+      // Can't extract a title -> can never be scored. Fail open: reveal it
+      // rather than leaving something we'll never revisit stuck hidden, and
+      // stamp it so future passes don't repeat the dim-then-show flicker.
+      applyDecision(cardEl, "show");
+      cardEl.dataset.yifVersion = versionStr;
+      continue;
+    }
     cardByVideoId.set(info.videoId, cardEl);
     infos.push({ ...info, cardEl });
 
