@@ -17,7 +17,15 @@ fetch-model:
 # release.zip at the repo root — this is the file to upload to the Chrome
 # Web Store dashboard. Includes the bundled model + WASM runtime, so it's
 # tens of MB; that's expected for an offline-first extension.
-release: regenerate-dist
+#
+# Pass VERSION to bump manifest.json + package.json before building, e.g.:
+#   make release VERSION=0.1.1
+release:
+ifdef VERSION
+	node -e "for (const f of ['manifest.json','package.json']) { const fs=require('fs'); const j=JSON.parse(fs.readFileSync(f)); j.version='$(VERSION)'; fs.writeFileSync(f, JSON.stringify(j, null, 2) + '\n'); }"
+	@echo "bumped version to $(VERSION)"
+endif
+	$(MAKE) regenerate-dist
 	rm -f release.zip
 	cd dist && zip -r -X ../release.zip . -x ".*"
 	@echo "release.zip ready: $$(du -h release.zip | cut -f1)"
