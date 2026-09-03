@@ -394,19 +394,23 @@ function attachObserver() {
   scheduleProcess();
 }
 
-// cardByVideoId can point at a detached element — the tracked card was
-// replaced or removed by YouTube's own DOM churn (recycled feed items,
-// horizontally-virtualized Shorts shelves) without a full navigation, so
-// init() never ran to clear the map. Falls back to a live lookup by the
-// stamped dataset id before giving up, so "Unhide" still finds the card
-// instead of silently scrolling/decision-updating a node that's no longer
-// on the page.
+// cardByVideoId can point at a detached, or worse a *recycled*, element.
+// The home feed's Shorts shelf scrolls horizontally, and horizontally-
+// virtualized carousels commonly reuse the same DOM node for a different
+// item as they scroll rather than removing/adding nodes — which our
+// MutationObserver (childList-based) never sees, so a node can keep its old
+// dataset.yifVideoId stamp long after its actual content moved on to a
+// different Short. A stale dataset match would silently grab the wrong
+// card, so this re-extracts and compares videoIds instead of trusting the
+// stamp alone whenever the cached reference isn't good enough to trust
+// outright.
 function findCardById(videoId) {
   const cached = cardByVideoId.get(videoId);
-  if (cached && cached.isConnected) return cached;
+  if (cached && cached.isConnected && cached.dataset.yifVideoId === videoId) return cached;
   if (!pageConfig) return null;
   for (const el of document.querySelectorAll(pageConfig.cardSelector)) {
-    if (el.dataset.yifVideoId === videoId) {
+    const info = extractCard(el);
+    if (info && info.videoId === videoId) {
       cardByVideoId.set(videoId, el);
       return el;
     }
@@ -529,10 +533,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (cardEl) {
       applyDecision(cardEl, "show");
       // The popup that triggered this sits on top of the same tab, so the
-      // scroll happens out of sight until the user closes it — the popup
-      // closes itself on a successful unhide (see popup.js) specifically so
-      // this becomes visible right away instead of staying hidden behind it.
-      cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      // scroll happens out of sight until the user closes it. inline:
+      // "center" (not the default "nearest") matters for the Shorts shelf
+      // specifically — it's a horizontal carousel, and "nearest" can leave
+      // an off-screen card exactly at the scroll boundary instead of
+      // actually bringing it into the visible strip.
+      cardEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
       scrolled = true;
     }
     const prior = cardState.get(videoId);

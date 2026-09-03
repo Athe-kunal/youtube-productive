@@ -202,11 +202,12 @@ function renderFiltered(dimmed) {
             emptyState.textContent = "Nothing filtered on this page yet.";
             emptyState.style.display = "";
           }
-          // The tab already scrolled the unhidden card into view, but it's
-          // sitting behind this popup — close so that's visible immediately
-          // instead of staying hidden until the user dismisses the popup
-          // themselves.
-          window.close();
+          // Deliberately does NOT close the popup — unhiding is often done
+          // one-after-another for several rows in the same list, and
+          // closing after each click meant reopening the popup and finding
+          // your place again just to unhide the next one. The tab's scroll
+          // happens behind the popup either way; closing it (click outside,
+          // Escape) reveals the result whenever the user's ready to look.
         } else {
           // scrolled: false means the content script couldn't find the card
           // it had tracked (stale after scrolling/DOM churn/navigation) —
