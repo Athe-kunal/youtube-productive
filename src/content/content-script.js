@@ -394,6 +394,26 @@ function attachObserver() {
   scheduleProcess();
 }
 
+// cardByVideoId can point at a detached element — the tracked card was
+// replaced or removed by YouTube's own DOM churn (recycled feed items,
+// horizontally-virtualized Shorts shelves) without a full navigation, so
+// init() never ran to clear the map. Falls back to a live lookup by the
+// stamped dataset id before giving up, so "Unhide" still finds the card
+// instead of silently scrolling/decision-updating a node that's no longer
+// on the page.
+function findCardById(videoId) {
+  const cached = cardByVideoId.get(videoId);
+  if (cached && cached.isConnected) return cached;
+  if (!pageConfig) return null;
+  for (const el of document.querySelectorAll(pageConfig.cardSelector)) {
+    if (el.dataset.yifVideoId === videoId) {
+      cardByVideoId.set(videoId, el);
+      return el;
+    }
+  }
+  return null;
+}
+
 function detachObserver() {
   if (observer) {
     observer.disconnect();
@@ -401,20 +421,39 @@ function detachObserver() {
   }
 }
 
+// Bumped on every init() call so a stale run — one superseded by a second,
+// faster navigation while its own loadState() is still in flight — can tell
+// it's no longer current and bail instead of attaching an observer for a
+// page the user has already navigated away from.
+let initGeneration = 0;
+
 async function init() {
+  const generation = ++initGeneration;
   log.log("init", { path: location.pathname });
   pageConfig = getPageConfig(location.pathname);
-  if (!pageConfig) {
-    log.log("init: unsupported page, skipping");
-    detachObserver();
-    return;
-  }
-  await loadState();
+  // Clear all page-scoped state synchronously, before the loadState() await
+  // below — not after it. GET_FILTERED_VIDEOS and UNHIDE_VIDEO are answered
+  // by listeners that run independently of this function, so a window where
+  // pageConfig already points at the new page but cardState/cardByVideoId
+  // still hold the previous page's cards means the popup can read (and act
+  // on) another page's stale "filtered" snapshot mid-navigation — e.g. right
+  // after clicking into a video from the home feed, before this page's own
+  // cards have been scored.
   cardByVideoId.clear();
   cardState.clear();
   failureAttempts.clear();
   manualShows.clear();
   detachObserver();
+  if (!pageConfig) {
+    log.log("init: unsupported page, skipping");
+    return;
+  }
+  await loadState();
+  if (generation !== initGeneration) {
+    // A later navigation already started its own init() while this one was
+    // awaiting storage — that one owns the observer now.
+    return;
+  }
   attachObserver();
 }
 
@@ -485,17 +524,24 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === MSG.UNHIDE_VIDEO) {
     const { videoId } = message.payload;
     manualShows.add(videoId);
-    const cardEl = cardByVideoId.get(videoId);
+    const cardEl = findCardById(videoId);
+    let scrolled = false;
     if (cardEl) {
       applyDecision(cardEl, "show");
       // The popup that triggered this sits on top of the same tab, so the
-      // scroll happens out of sight until the user closes it — but it means
-      // the unhidden card is already centered in view once they do.
+      // scroll happens out of sight until the user closes it — the popup
+      // closes itself on a successful unhide (see popup.js) specifically so
+      // this becomes visible right away instead of staying hidden behind it.
       cardEl.scrollIntoView({ behavior: "smooth", block: "center" });
+      scrolled = true;
     }
     const prior = cardState.get(videoId);
     if (prior) cardState.set(videoId, { ...prior, decision: "show" });
-    sendResponse({ ok: true });
+    scheduleFilterStateBroadcast();
+    // `scrolled: false` tells the popup the tracked card couldn't be found
+    // on the page (stale reference) — it falls back to refetching the whole
+    // filtered list rather than assuming the click did anything.
+    sendResponse({ ok: true, scrolled });
     return true;
   }
 
