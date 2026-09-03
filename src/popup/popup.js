@@ -158,7 +158,12 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     // is a one-shot snapshot that would otherwise go stale the moment
     // Apply is clicked (thumbnail hides on the page, but the popup's list
     // still shows the pre-Apply state).
-    if (!sender.tab || sender.tab.id === currentTabId) loadFiltered();
+    // currentTabId is set inside loadFiltered(), which is still awaiting its
+    // first chrome.tabs.query() for a brief window right after the popup
+    // opens — a broadcast landing in that window used to be dropped (it
+    // matched neither branch), leaving the popup stuck on an empty or
+    // pre-scoring snapshot until the next time it was reopened.
+    if (!currentTabId || !sender.tab || sender.tab.id === currentTabId) loadFiltered();
   }
 });
 
@@ -187,11 +192,27 @@ function renderFiltered(dimmed) {
     unhideBtn.addEventListener("click", async () => {
       unhideBtn.disabled = true;
       try {
-        await chrome.tabs.sendMessage(currentTabId, { type: MSG.UNHIDE_VIDEO, payload: { videoId: v.videoId } });
-        li.remove();
-        if (!listEl.children.length) {
-          emptyState.textContent = "Nothing filtered on this page yet.";
-          emptyState.style.display = "";
+        const response = await chrome.tabs.sendMessage(currentTabId, {
+          type: MSG.UNHIDE_VIDEO,
+          payload: { videoId: v.videoId },
+        });
+        if (response && response.ok && response.scrolled) {
+          li.remove();
+          if (!listEl.children.length) {
+            emptyState.textContent = "Nothing filtered on this page yet.";
+            emptyState.style.display = "";
+          }
+          // The tab already scrolled the unhidden card into view, but it's
+          // sitting behind this popup — close so that's visible immediately
+          // instead of staying hidden until the user dismisses the popup
+          // themselves.
+          window.close();
+        } else {
+          // scrolled: false means the content script couldn't find the card
+          // it had tracked (stale after scrolling/DOM churn/navigation) —
+          // this row no longer reflects the live page, so refetch instead of
+          // just removing it and leaving the rest of the list stale too.
+          await loadFiltered();
         }
       } catch {
         unhideBtn.disabled = false;
