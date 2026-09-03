@@ -1,6 +1,6 @@
 {
   "name": "youtube-intent-filter",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Curate the YouTube feed by semantic intent, entirely on-device.",
   "type": "module",
