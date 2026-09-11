@@ -7,7 +7,7 @@ import { STORAGE_KEYS, DEBOUNCE_MS, CACHE_FLUSH_DEBOUNCE_MS, MAX_SCORE_ATTEMPTS,
 import { ADAPTIVE_SCORE_CHUNK_SIZE, EXTRACT_YIELD_EVERY, yieldToMain } from "../shared/device.js";
 import { getPageConfig } from "./selectors.js";
 import { extractCard } from "./card-extractor.js";
-import { applyDecision } from "./visibility-controller.js";
+import { applyDecision, isDimmed } from "./visibility-controller.js";
 import { createLogger } from "../shared/log.js";
 
 const log = createLogger("content");
@@ -152,6 +152,17 @@ function showAllTrackedCards() {
 async function processCardsInner() {
   if (!pageConfig) return;
 
+  // Captured once up front: processCardsInner spans real await points
+  // (yieldToMain, and one SCORE_BATCH round trip per chunk), and init()
+  // clears cardState/cardByVideoId synchronously on every SPA navigation
+  // without cancelling an in-flight pass from the page just left. Without
+  // this guard, a SCORE_BATCH response that resolves after the user has
+  // already clicked into a video keeps writing the *previous* page's
+  // videos back into the maps init() just cleared for the new page —
+  // which is exactly what made the popup's filtered list show stale,
+  // previous-page entries after a forward navigation.
+  const myGeneration = initGeneration;
+
   if (globalSettings && globalSettings[STORAGE_KEYS.EXTENSION_ENABLED] === false) {
     log.log("processCards: extension disabled, showing everything");
     showAllTrackedCards();
@@ -184,7 +195,29 @@ async function processCardsInner() {
     // extraction-failure stamp set below, so this also catches "already
     // gave up on this one" without re-touching it.
     if (cardEl.dataset.yifVersion === versionStr) {
-      if (cardEl.dataset.yifVideoId) cardByVideoId.set(cardEl.dataset.yifVideoId, cardEl);
+      const videoId = cardEl.dataset.yifVideoId;
+      if (videoId) {
+        cardByVideoId.set(videoId, cardEl);
+        // SPA back-navigation commonly restores this exact, already-stamped
+        // DOM node instead of re-rendering it, so the dim/show styling is
+        // still correct — but init() clears cardState on every navigation,
+        // and this fast path used to only re-register cardByVideoId, never
+        // cardState. That left the popup's GET_FILTERED_VIDEOS (which reads
+        // only cardState) with nothing to report even though cards were
+        // visibly dimmed on the page. Rebuild the entry straight from the
+        // DOM/cache rather than re-running it through scoring.
+        if (!cardState.has(videoId)) {
+          const info = extractCard(cardEl);
+          const cached = scoreCache.get(scoreCacheKey(videoId));
+          cardState.set(videoId, {
+            title: info ? info.title : "",
+            channel: info ? info.channel : "",
+            score: cached ? cached.score : null,
+            decision: isDimmed(cardEl) ? "dim" : "show",
+            isShort: info ? info.isShort : false,
+          });
+        }
+      }
       continue;
     }
     // Hide first, reveal on a "show" decision — not the other way around.
@@ -220,6 +253,10 @@ async function processCardsInner() {
     if (sinceYield >= EXTRACT_YIELD_EVERY) {
       sinceYield = 0;
       await yieldToMain();
+      // A navigation happened while this extraction pass was yielded —
+      // bail rather than keep extracting/dimming cards that belong to a
+      // page the user already left.
+      if (myGeneration !== initGeneration) return;
     }
   }
 
@@ -241,6 +278,14 @@ async function processCardsInner() {
   for (let i = 0; i < toScore.length; i += ADAPTIVE_SCORE_CHUNK_SIZE) {
     const chunk = toScore.slice(i, i + ADAPTIVE_SCORE_CHUNK_SIZE);
     const response = await sendToBackground(MSG.SCORE_BATCH, { videos: chunk, profileId: activeProfile.id });
+    // The user may have navigated away while this chunk's SCORE_BATCH round
+    // trip was in flight. init() already cleared cardState/cardByVideoId for
+    // the new page, so applying these results now would write this (now
+    // previous) page's videos back into the new page's maps — surfacing as
+    // stale entries in the popup's filtered list. Bail entirely rather than
+    // just skip the apply step; the superseded pass has nothing useful left
+    // to do, and the new page's own init() already kicked off its own pass.
+    if (myGeneration !== initGeneration) return;
     if (!response || !response.ok) {
       log.error("processCards: SCORE_BATCH failed", response && response.error);
       continue;
