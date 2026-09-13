@@ -194,31 +194,48 @@ async function processCardsInner() {
     // re-processing every card ever seen. yifVideoId is absent for the
     // extraction-failure stamp set below, so this also catches "already
     // gave up on this one" without re-touching it.
+    //
+    // But a stamp match alone isn't proof this node still holds the video
+    // it was stamped for. YouTube's virtualized shelves recycle a DOM node
+    // in place for a different item without clearing our dataset attrs
+    // (the exact reuse findCardById already guards against when looking a
+    // card up by id) — so a home-feed tile revisited via infinite scroll,
+    // or a sidebar recommendation swapped out in place, can carry a stale
+    // yifVersion/yifVideoId pointing at whatever used to render there.
+    // Re-extract and compare videoIds before trusting the stamp; a
+    // mismatch means this node moved on, so fall through and treat it as a
+    // brand-new card instead of reapplying a decision that belongs to
+    // different content.
+    let liveInfo = null;
     if (cardEl.dataset.yifVersion === versionStr) {
-      const videoId = cardEl.dataset.yifVideoId;
-      if (videoId) {
-        cardByVideoId.set(videoId, cardEl);
-        // SPA back-navigation commonly restores this exact, already-stamped
-        // DOM node instead of re-rendering it, so the dim/show styling is
-        // still correct — but init() clears cardState on every navigation,
-        // and this fast path used to only re-register cardByVideoId, never
-        // cardState. That left the popup's GET_FILTERED_VIDEOS (which reads
-        // only cardState) with nothing to report even though cards were
-        // visibly dimmed on the page. Rebuild the entry straight from the
-        // DOM/cache rather than re-running it through scoring.
-        if (!cardState.has(videoId)) {
-          const info = extractCard(cardEl);
-          const cached = scoreCache.get(scoreCacheKey(videoId));
-          cardState.set(videoId, {
-            title: info ? info.title : "",
-            channel: info ? info.channel : "",
-            score: cached ? cached.score : null,
-            decision: isDimmed(cardEl) ? "dim" : "show",
-            isShort: info ? info.isShort : false,
-          });
+      const stampedVideoId = cardEl.dataset.yifVideoId;
+      liveInfo = stampedVideoId ? extractCard(cardEl) : null;
+      if (!stampedVideoId || !liveInfo || liveInfo.videoId === stampedVideoId) {
+        if (stampedVideoId) {
+          cardByVideoId.set(stampedVideoId, cardEl);
+          // SPA back-navigation commonly restores this exact, already-stamped
+          // DOM node instead of re-rendering it, so the dim/show styling is
+          // still correct — but init() clears cardState on every navigation,
+          // and this fast path used to only re-register cardByVideoId, never
+          // cardState. That left the popup's GET_FILTERED_VIDEOS (which reads
+          // only cardState) with nothing to report even though cards were
+          // visibly dimmed on the page. Rebuild the entry straight from the
+          // DOM/cache rather than re-running it through scoring.
+          if (!cardState.has(stampedVideoId)) {
+            const cached = scoreCache.get(scoreCacheKey(stampedVideoId));
+            cardState.set(stampedVideoId, {
+              title: liveInfo ? liveInfo.title : "",
+              channel: liveInfo ? liveInfo.channel : "",
+              score: cached ? cached.score : null,
+              decision: isDimmed(cardEl) ? "dim" : "show",
+              isShort: liveInfo ? liveInfo.isShort : false,
+            });
+          }
         }
+        continue;
       }
-      continue;
+      // Stamp is stale (recycled node) — reprocess below using the
+      // liveInfo already extracted, rather than re-extracting it twice.
     }
     // Hide first, reveal on a "show" decision — not the other way around.
     // A card sits here, at worst, for one synchronous extraction call plus
@@ -227,7 +244,7 @@ async function processCardsInner() {
     // (title, channel, everything) for that whole window instead.
     applyDecision(cardEl, "dim");
 
-    const info = extractCard(cardEl);
+    const info = liveInfo || extractCard(cardEl);
     if (!info) {
       // Can't extract a title -> can never be scored. Fail open: reveal it
       // rather than leaving something we'll never revisit stuck hidden, and
@@ -378,16 +395,21 @@ function collectCandidateCards() {
     // Consume the full-scan request; resume scoped/incremental tracking
     // for subsequent passes until something forces another full scan.
     pendingRoots = new Set();
-    return new Set(document.querySelectorAll(pageConfig.cardSelector));
+    // Excludes YouTube's off-breakpoint display:none duplicate of each
+    // card (see isRenderedCard) — tracking that copy instead of the real
+    // one is what made dimming/Unhide silently target an invisible twin.
+    return new Set([...document.querySelectorAll(pageConfig.cardSelector)].filter(isRenderedCard));
   }
   const roots = pendingRoots;
   pendingRoots = new Set();
   const cards = new Set();
   for (const root of roots) {
     if (!root.isConnected) continue;
-    if (root.matches && root.matches(pageConfig.cardSelector)) cards.add(root);
+    if (root.matches && root.matches(pageConfig.cardSelector) && isRenderedCard(root)) cards.add(root);
     if (root.querySelectorAll) {
-      for (const el of root.querySelectorAll(pageConfig.cardSelector)) cards.add(el);
+      for (const el of root.querySelectorAll(pageConfig.cardSelector)) {
+        if (isRenderedCard(el)) cards.add(el);
+      }
     }
   }
   return cards;
@@ -439,6 +461,23 @@ function attachObserver() {
   scheduleProcess();
 }
 
+// YouTube commonly renders two DOM copies of the same recommendation at
+// once — one per responsive layout breakpoint — and leaves CSS (not
+// presence/absence in the DOM) to decide which one is actually on screen.
+// A `yt-lockup-view-model` count roughly double the number of visibly
+// distinct recommendations is exactly this: querySelectorAll happily
+// returns both the shown card and its display:none twin, and nothing here
+// distinguished between them. Whichever copy happened to come first in DOM
+// order silently won the cardByVideoId slot — so dimming, and the popup's
+// Unhide scroll, would target the *hidden* twin roughly as often as the
+// real one, with no visible effect. getClientRects().length is 0 for a
+// display:none element (and for a detached one) but non-zero for anything
+// actually laid out, including one that's merely off-screen or covered —
+// exactly the distinction needed here.
+function isRenderedCard(el) {
+  return el.getClientRects().length > 0;
+}
+
 // cardByVideoId can point at a detached, or worse a *recycled*, element.
 // The home feed's Shorts shelf scrolls horizontally, and horizontally-
 // virtualized carousels commonly reuse the same DOM node for a different
@@ -451,9 +490,10 @@ function attachObserver() {
 // outright.
 function findCardById(videoId) {
   const cached = cardByVideoId.get(videoId);
-  if (cached && cached.isConnected && cached.dataset.yifVideoId === videoId) return cached;
+  if (cached && cached.isConnected && cached.dataset.yifVideoId === videoId && isRenderedCard(cached)) return cached;
   if (!pageConfig) return null;
   for (const el of document.querySelectorAll(pageConfig.cardSelector)) {
+    if (!isRenderedCard(el)) continue;
     const info = extractCard(el);
     if (info && info.videoId === videoId) {
       cardByVideoId.set(videoId, el);
@@ -493,6 +533,14 @@ async function init() {
   failureAttempts.clear();
   manualShows.clear();
   detachObserver();
+  // Tell any popup that's already open (survives navigation unless the
+  // click that triggered it also blurred the popup) that its last
+  // GET_FILTERED_VIDEOS snapshot is now void — nothing here broadcast this
+  // on navigation before, so a popup left open across a click-through kept
+  // showing the previous page's filtered list, with working-looking Unhide
+  // buttons for videos that no longer exist on the current page. The new
+  // page's own scoring pass rebroadcasts again once it has real results.
+  scheduleFilterStateBroadcast();
   if (!pageConfig) {
     log.log("init: unsupported page, skipping");
     return;
@@ -545,9 +593,32 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === MSG.GET_FILTERED_VIDEOS) {
-    const dimmed = Array.from(cardState.entries())
-      .filter(([, v]) => v.decision === "dim")
-      .map(([videoId, v]) => ({ videoId, title: v.title, channel: v.channel, score: v.score, isShort: v.isShort }));
+    // A card updated in place — e.g. the watch page's "up next" queue
+    // swapping in a different recommendation without adding/removing a DOM
+    // node — is invisible to our childList MutationObserver, so cardState
+    // can go on holding an entry for a video that no longer has a matching
+    // card anywhere on the page. Confirming each entry against the live DOM
+    // here (rather than trusting the last-known decision blindly) is what
+    // keeps the popup's Unhide button from targeting a card that's already
+    // moved on — which fails to scroll and looks like the click did
+    // nothing. findCardById's own cache-then-full-scan fallback keeps this
+    // cheap for the common case where nothing's actually gone stale.
+    const dimmed = [];
+    const droppedAsStale = [];
+    for (const [videoId, v] of cardState) {
+      if (v.decision !== "dim") continue;
+      if (!findCardById(videoId)) {
+        cardState.delete(videoId);
+        droppedAsStale.push({ videoId, title: v.title });
+        continue;
+      }
+      dimmed.push({ videoId, title: v.title, channel: v.channel, score: v.score, isShort: v.isShort });
+    }
+    log.log("GET_FILTERED_VIDEOS", {
+      path: location.pathname,
+      returning: dimmed.map((d) => ({ videoId: d.videoId, title: d.title })),
+      droppedAsStale,
+    });
     // Page order, not score order: a card dimmed near the top of the feed
     // should surface at the top of the popup list too, matching where the
     // user would actually go looking for it — not wherever its score
@@ -585,9 +656,26 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // actually bringing it into the visible strip.
       cardEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
       scrolled = true;
+      const prior = cardState.get(videoId);
+      if (prior) cardState.set(videoId, { ...prior, decision: "show" });
+    } else {
+      // Nothing on the page matches this id anymore — the card was
+      // recycled for different content, or scrolled out of a queue that
+      // replaces itself in place. There's nothing to reveal, so drop the
+      // stale entry rather than stamping it "show", which would silently
+      // report success for a video that was never actually unhidden.
+      cardState.delete(videoId);
     }
-    const prior = cardState.get(videoId);
-    if (prior) cardState.set(videoId, { ...prior, decision: "show" });
+    log.log("UNHIDE_VIDEO", {
+      path: location.pathname,
+      videoId,
+      found: !!cardEl,
+      cachedRefExisted: cardByVideoId.has(videoId),
+      liveCardCount: pageConfig ? document.querySelectorAll(pageConfig.cardSelector).length : -1,
+      renderedCardCount: pageConfig
+        ? [...document.querySelectorAll(pageConfig.cardSelector)].filter(isRenderedCard).length
+        : -1,
+    });
     scheduleFilterStateBroadcast();
     // `scrolled: false` tells the popup the tracked card couldn't be found
     // on the page (stale reference) — it falls back to refetching the whole
@@ -617,6 +705,6 @@ setInterval(() => {
   scheduleProcess();
 }, SCHEDULE_RECHECK_MS);
 
-log.log("content script injected", { url: location.href });
+log.log("content script injected", { url: location.href, build: "stale-filter-debug-1" });
 document.addEventListener("yt-navigate-finish", init);
 init();
