@@ -1,6 +1,7 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
-import { getSettings, setSettings, getProfiles } from "../shared/storage.js";
+import { getProfiles, getStats } from "../shared/storage.js";
+import { dayKey } from "../shared/stats.js";
 import { pickActiveProfile } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 
@@ -8,7 +9,6 @@ const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
 const intentCounterEl = document.getElementById("intent-counter");
 const avoidCounterEl = document.getElementById("avoid-counter");
-const extensionEnabledEl = document.getElementById("extension-enabled");
 const profileSelectEl = document.getElementById("profile-select");
 const profileHintEl = document.getElementById("profile-hint");
 const scheduleEnabledEl = document.getElementById("schedule-enabled");
@@ -21,6 +21,7 @@ const saveBtn = document.getElementById("save");
 const statusEl = document.getElementById("status");
 const emptyState = document.getElementById("empty-state");
 const listEl = document.getElementById("list");
+const todayStatsEl = document.getElementById("today-stats");
 
 let currentTabId = null;
 let profiles = [];
@@ -44,11 +45,8 @@ document.getElementById("full-settings-btn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
-// Applies instantly, no Save click needed — this is a kill switch, not a
-// tunable that benefits from a review-before-commit step.
-extensionEnabledEl.addEventListener("change", () => {
-  setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
-});
+// Deliberately no master switch or hardcore toggle here — both live only in
+// full settings, so turning the filter off takes more than one casual click.
 
 function readSchedule() {
   return {
@@ -60,6 +58,26 @@ function readSchedule() {
 function syncScheduleRowsVisibility() {
   scheduleRowsEl.hidden = !scheduleEnabledEl.checked;
 }
+
+async function renderTodayStats() {
+  const stats = await getStats();
+  const today = stats[dayKey()] || {};
+  todayStatsEl.replaceChildren();
+  const parts = [
+    ["Unhidden today: ", today.unhides || 0],
+    [" · Filtered today: ", today.filtered || 0],
+  ];
+  for (const [label, value] of parts) {
+    const strong = document.createElement("strong");
+    strong.textContent = value;
+    todayStatsEl.append(label, strong);
+  }
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area !== "local") return;
+  if (STORAGE_KEYS.STATS in changes) renderTodayStats();
+});
 
 function currentProfile() {
   return profiles.find((p) => p.id === currentProfileId) || null;
@@ -105,14 +123,12 @@ profileSelectEl.addEventListener("change", () => {
 });
 
 async function loadSettings() {
-  const settings = await getSettings();
-  extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
-
   profiles = await getProfiles();
   const active = pickActiveProfile(profiles);
   currentProfileId = (active || profiles[0]).id;
   renderProfileOptions();
   loadProfileIntoForm(currentProfile());
+  renderTodayStats();
 }
 
 saveBtn.addEventListener("click", async () => {
@@ -196,7 +212,9 @@ function renderFiltered(dimmed) {
           type: MSG.UNHIDE_VIDEO,
           payload: { videoId: v.videoId },
         });
-        if (response && response.ok && response.scrolled) {
+        if (response && response.hardcore) {
+          await loadFiltered();
+        } else if (response && response.ok && response.scrolled) {
           li.remove();
           if (!listEl.children.length) {
             emptyState.textContent = "Nothing filtered on this page yet.";
@@ -251,7 +269,16 @@ async function loadFiltered() {
     return;
   }
 
+  if (response.hardcore) {
+    listEl.innerHTML = "";
+    emptyState.style.display = "";
+    emptyState.textContent = "Hardcore mode is on — filtered videos stay hidden.";
+    return;
+  }
+
   if (response.dimmed.length === 0) {
+    listEl.innerHTML = "";
+    emptyState.style.display = "";
     emptyState.textContent = "Nothing filtered on this page yet.";
     return;
   }

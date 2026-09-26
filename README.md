@@ -5,7 +5,7 @@
 Tell it what you're here for ("AI research, systems, distributed training — no football, no
 drama") and it embeds that intent locally, scores every video card as it renders, and dims
 anything that doesn't match. No API calls, no account, no subscription. The model runs in your
-browser via [Transformers.js](https://github.com/huggingface/transformers.js) — your feed, your
+browser via Transformers.js (the `@xenova/transformers` npm package) — your feed, your
 intent, and your viewing habits never leave your device.
 
 <!-- Demo GIF goes here — see the Screenshots section below. -->
@@ -22,8 +22,8 @@ systems," even though they don't share a single keyword.
 Everything computes locally:
 
 - No servers, no telemetry, no account.
-- The model (~23 MB, quantized) downloads once from Hugging Face on first use, then runs fully
-  offline.
+- The model (~34 MB, quantized) ships inside the extension package — nothing is downloaded at
+  runtime, and the extension only requests access to youtube.com.
 - Your intent text, its embedding, and your settings live in `chrome.storage.local` and never
   leave your machine.
 
@@ -42,8 +42,12 @@ See [`PRIVACY.md`](PRIVACY.md) for the full policy.
   matches right now is used automatically.
 - **Scheduled profiles** — set active hours per weekday/weekend so the right profile kicks in
   without you touching the extension.
-- **Runs on-device** — powered by [🤗 Transformers.js](https://github.com/huggingface/transformers.js)
-  and a quantized [ONNX](https://onnx.ai/) sentence embedding model, executed in an offscreen
+- **Hardcore mode** — a per-profile switch in full settings (deliberately not in the popup, like
+  the master on/off switch) that hides the "Filtered on this page" list and refuses unhide requests, so filtered
+  videos stay filtered.
+- **Progress stats** — the full settings page shows how many distracting videos were filtered and
+  how many you unhid, per day, as a chart. The popup shows today's counts. Stored locally only.
+- **Runs on-device** — powered by Transformers.js and a quantized [ONNX](https://onnx.ai/) sentence embedding model, executed in an offscreen
   document via WASM (WebGPU where available).
 
 ## Install

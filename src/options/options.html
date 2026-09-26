@@ -22,6 +22,43 @@
         </label>
       </div>
 
+      <section class="progress" id="progress-section" aria-labelledby="progress-heading">
+        <div class="progress-head">
+          <h2 id="progress-heading">Your progress</h2>
+          <div class="range-toggle" id="range-toggle" role="group" aria-label="Chart range">
+            <button type="button" data-days="7">7d</button>
+            <button type="button" data-days="14" class="active">14d</button>
+            <button type="button" data-days="30">30d</button>
+          </div>
+        </div>
+        <div class="stat-tiles">
+          <div class="stat-tile">
+            <span class="stat-value" id="stat-filtered-today">0</span>
+            <span class="stat-label">Filtered today</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-value" id="stat-unhidden-today">0</span>
+            <span class="stat-label">Unhidden today</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-value" id="stat-filtered-range">0</span>
+            <span class="stat-label" id="stat-filtered-range-label">Filtered (14 days)</span>
+          </div>
+          <div class="stat-tile">
+            <span class="stat-value" id="stat-unhidden-range">0</span>
+            <span class="stat-label" id="stat-unhidden-range-label">Unhidden (14 days)</span>
+          </div>
+        </div>
+        <div class="chart-legend">
+          <span><i class="swatch swatch-filtered"></i>Distracting videos filtered</span>
+          <span><i class="swatch swatch-unhidden"></i>Videos unhidden</span>
+        </div>
+        <div id="stats-chart" class="stats-chart"></div>
+        <p class="hint" id="stats-empty" hidden>
+          No activity yet — filtered and unhidden videos will show up here as you browse YouTube.
+        </p>
+      </section>
+
       <div id="welcome-banner" class="welcome-banner" hidden>
         <p>👋 We're here to help you avoid falling into the YouTube rabbit hole.</p>
         <div class="welcome-actions">
@@ -65,19 +102,6 @@
         "no football" up there tends to backfire and show you more football, not less.
       </p>
 
-      <!-- Multilingual model tier disabled for now — sticking to the small
-           bundled model only. Re-enable by uncommenting this block and the
-           matching code in options.js.
-      <label class="toggle-label">
-        <input type="checkbox" id="model-tier" />
-        Use the larger multilingual model (accuracy over speed)
-      </label>
-      <p class="hint">
-        Results feel off? The larger model understands more languages and subtler phrasing.
-        It's slower and downloads ~570 MB the first time you switch to it.
-      </p>
-      <p id="model-tier-status" class="hint"></p>
-      -->
 
 
       <label>Always show (keywords)</label>
@@ -110,6 +134,16 @@
           <input type="time" id="weekend-end" />
         </div>
       </div>
+
+      <label class="toggle-label" id="hardcore-row">
+        <input type="checkbox" id="hardcore-mode" />
+        Hardcore mode
+      </label>
+      <p class="hint">
+        While on, filtered videos are never listed and can't be unhidden from the popup. This
+        setting (and the master on/off switch) can only be changed here, not from the popup.
+        Applies to this profile.
+      </p>
 
       <button id="save">Save</button>
       <span id="status" role="status"></span>

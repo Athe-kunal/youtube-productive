@@ -30,6 +30,18 @@ const failureAttempts = new Map(); // videoId -> embed attempts this page sessio
 // the "Always show" keyword field is for.
 const manualShows = new Set();
 
+// Hardcore mode is per profile and is enforced here, not just in the popup:
+// while it's on, the filtered list is withheld and UNHIDE_VIDEO is refused,
+// so there's no path (popup or otherwise) to reveal a filtered card.
+function isHardcore() {
+  return !!(activeProfile && activeProfile.hardcoreMode);
+}
+
+function recordStat(kind, count = 1) {
+  if (!(count > 0)) return;
+  sendToBackground(MSG.RECORD_STAT, { kind, count }).catch(() => {});
+}
+
 function scoreCacheKey(videoId) {
   return `${activeProfile.id}:${videoId}`;
 }
@@ -62,6 +74,7 @@ function applyDecisionsForScoredItems(items) {
   const validCalibration = calibration && calibration.version === currentVersion ? calibration : null;
   const cutoff = calibratedCutoff(validCalibration, DEFAULT_SENSITIVITY_K);
 
+  let newlyDimmed = 0;
   for (const item of items) {
     const decision = manualShows.has(item.videoId)
       ? "show"
@@ -74,6 +87,8 @@ function applyDecisionsForScoredItems(items) {
           excludeKeywords: activeProfile.excludeKeywords,
         });
     applyDecision(item.cardEl, decision);
+    const prior = cardState.get(item.videoId);
+    if (decision === "dim" && !(prior && prior.decision === "dim")) newlyDimmed++;
     // Marks this card as fully decided for the active profile's current
     // intent version, so later passes can skip re-extracting/re-scoring it
     // entirely. Namespaced by profile id (not just the version number)
@@ -91,6 +106,7 @@ function applyDecisionsForScoredItems(items) {
       isShort: item.isShort,
     });
   }
+  recordStat("filtered", newlyDimmed);
   log.log("applyDecisionsForScoredItems", { count: items.length, cutoff: cutoff.toFixed(3) });
   scheduleFilterStateBroadcast();
 }
@@ -565,7 +581,15 @@ chrome.storage.onChanged.addListener((changes, area) => {
     const activeChanged =
       (activeProfile ? activeProfile.id : null) !== (nextActive ? nextActive.id : null) ||
       (activeProfile && nextActive && activeProfile.intentVersion !== nextActive.intentVersion);
+    const wasHardcore = isHardcore();
     activeProfile = nextActive;
+    if (wasHardcore !== isHardcore()) {
+      // Turning hardcore on discards any earlier "show anyway" clicks so
+      // those cards go back under the filter; either way the popup's
+      // filtered list needs to re-fetch (it's empty or full now).
+      if (isHardcore()) manualShows.clear();
+      scheduleFilterStateBroadcast();
+    }
     if (activeChanged) {
       needsFullScan = true;
     } else if (activeProfile) {
@@ -593,6 +617,16 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === MSG.GET_FILTERED_VIDEOS) {
+    if (isHardcore()) {
+      sendResponse({
+        ok: true,
+        isSupportedPage: !!pageConfig,
+        hardcore: true,
+        dimmed: [],
+        activeProfile: { id: activeProfile.id, name: activeProfile.name },
+      });
+      return true;
+    }
     // A card updated in place — e.g. the watch page's "up next" queue
     // swapping in a different recommendation without adding/removing a DOM
     // node — is invisible to our childList MutationObserver, so cardState
@@ -635,6 +669,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({
       ok: true,
       isSupportedPage: !!pageConfig,
+      hardcore: false,
       dimmed,
       activeProfile: activeProfile && { id: activeProfile.id, name: activeProfile.name },
     });
@@ -642,6 +677,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message && message.type === MSG.UNHIDE_VIDEO) {
+    if (isHardcore()) {
+      sendResponse({ ok: false, hardcore: true });
+      return true;
+    }
     const { videoId } = message.payload;
     manualShows.add(videoId);
     const cardEl = findCardById(videoId);
@@ -656,6 +695,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       // actually bringing it into the visible strip.
       cardEl.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" });
       scrolled = true;
+      recordStat("unhides");
       const prior = cardState.get(videoId);
       if (prior) cardState.set(videoId, { ...prior, decision: "show" });
     } else {

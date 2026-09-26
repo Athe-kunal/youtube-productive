@@ -9,10 +9,6 @@
     <header>
       <span class="title">YouTube Intent Filter</span>
       <div class="header-actions">
-        <label class="switch" title="Enable/disable the extension">
-          <input type="checkbox" id="extension-enabled" checked />
-          <span class="switch-track"></span>
-        </label>
         <button id="full-settings-btn" title="Open full settings page">⤢</button>
       </div>
     </header>
@@ -77,6 +73,7 @@
 
       <section id="filtered-section">
         <p class="section-heading">⬇️ Filtered on this page</p>
+        <p class="stats-line" id="today-stats" role="status"></p>
         <p id="empty-state" class="muted">Loading…</p>
         <ul id="list"></ul>
       </section>

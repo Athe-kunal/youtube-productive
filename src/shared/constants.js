@@ -2,11 +2,8 @@
 // "GPT-5 explained" for an "LLM" intent) above irrelevant ones more
 // reliably than MiniLM in practice — MiniLM leans heavily on literal word
 // overlap, which produces bad rankings for short keyword-style intents.
-//
-// bge-m3 is the opt-in upgrade: multilingual, more accurate, but ~17x the
-// download size — never loaded unless the user picks it, and fetched
-// remotely from the Hub on first use rather than bundled (see
-// scripts/fetch-model.mjs, which deliberately does NOT fetch this one).
+// It ships bundled inside the extension (see scripts/fetch-model.mjs), so
+// nothing is ever downloaded at runtime.
 export const MODEL_TIERS = {
   small: {
     id: "Xenova/bge-small-en-v1.5",
@@ -15,14 +12,6 @@ export const MODEL_TIERS = {
     remote: false,
     threaded: false,
     sizeLabel: "34 MB, bundled",
-  },
-  large: {
-    id: "Xenova/bge-m3",
-    label: "Accurate (multilingual)",
-    dim: 1024,
-    remote: true,
-    threaded: true,
-    sizeLabel: "~570 MB, downloaded once",
   },
 };
 export const DEFAULT_MODEL_TIER = "small";
@@ -61,10 +50,8 @@ export const STORAGE_KEYS = {
   // there being one global set.
   PROFILES: "yif_profiles",
 
-  // Which entry in MODEL_TIERS is active. Global, not per-profile —
-  // switching tiers re-embeds every profile's vectors (see
-  // background/service-worker.js#SET_MODEL_TIER) since it changes the
-  // embedding dimension.
+  // Which entry in MODEL_TIERS is active. Only "small" exists now; the key
+  // is kept so an old install's stored value still resolves.
   MODEL_TIER: "yif_model_tier",
   // videoId-or-`${profileId}:${videoId}` -> { score, version }. Namespaced
   // by profile so two profiles with different intents never collide on the
@@ -75,6 +62,10 @@ export const STORAGE_KEYS = {
   EXTENSION_ENABLED: "yif_extension_enabled",
   // Whether the first-install settings tour has been shown/skipped.
   TOUR_SEEN: "yif_tour_seen",
+  // { "YYYY-MM-DD": { unhides, filtered } } — see shared/stats.js. Written
+  // only by the background service worker (RECORD_STAT) so concurrent
+  // YouTube tabs can't clobber each other's read-modify-write.
+  STATS: "yif_stats",
 };
 
 export const MAX_PROFILES = 3;
@@ -109,12 +100,6 @@ export const SCORE_CACHE_LIMIT = 2000;
 // Cards are marked processed and skipped on later passes; each mutation
 // batch only needs to embed/decide the cards that are actually new.
 export const SCORE_CHUNK_SIZE = 32;
-// bge-m3 costs far more per item than bge-small (1024-dim, ~17x the
-// params); the offscreen document re-chunks SCORE_BATCH work down to this
-// size when the large tier is active, independent of the hardware-tier
-// chunking content-script.js already does on the way in — that keeps peak
-// tensor memory and per-round-trip latency sane for the heavier model.
-export const LARGE_MODEL_SCORE_CHUNK_SIZE = 8;
 export const CACHE_FLUSH_DEBOUNCE_MS = 5000;
 // A title that fails to embed twice is given up on (cached as permanently
 // dimmed) instead of being resent on every subsequent pass forever.

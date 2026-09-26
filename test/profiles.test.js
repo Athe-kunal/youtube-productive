@@ -13,6 +13,7 @@ test("createProfile: blank profile has the expected shape and a unique id", () =
   assert.equal(a.intentText, "");
   assert.equal(a.intentVector, null);
   assert.equal(a.scheduleEnabled, false);
+  assert.equal(a.hardcoreMode, false);
   assert.deepEqual(a.includeKeywords, []);
   assert.notEqual(a.id, b.id);
 });

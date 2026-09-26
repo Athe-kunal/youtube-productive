@@ -21,6 +21,10 @@ export function createProfile(name) {
     excludeKeywords: [],
     scheduleEnabled: false,
     schedule: DEFAULT_SCHEDULE,
+    // While on, filtered videos can't be listed or unhidden from the popup
+    // (enforced in the content script). Off by default; profiles saved
+    // before this field existed read as undefined, i.e. off.
+    hardcoreMode: false,
   };
 }
 

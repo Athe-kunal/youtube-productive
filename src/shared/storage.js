@@ -89,6 +89,18 @@ export async function deleteProfile(profileId) {
   return next;
 }
 
+export function getStats() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ [STORAGE_KEYS.STATS]: {} }, (items) => resolve(items[STORAGE_KEYS.STATS]));
+  });
+}
+
+export function setStats(stats) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set({ [STORAGE_KEYS.STATS]: stats }, resolve);
+  });
+}
+
 export function getScoreCache() {
   return new Promise((resolve) => {
     chrome.storage.local.get({ [STORAGE_KEYS.SCORE_CACHE]: {} }, (items) =>

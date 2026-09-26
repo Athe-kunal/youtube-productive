@@ -1,12 +1,7 @@
 import { MSG, onMessage } from "../shared/messaging.js";
 import { cosineSimilarity } from "../shared/scoring.js";
 import { loadExtractor, embed, embedResilient } from "../lib/model-loader.js";
-import {
-  BGE_QUERY_PREFIX,
-  AVOID_LAMBDA,
-  DEFAULT_MODEL_TIER,
-  LARGE_MODEL_SCORE_CHUNK_SIZE,
-} from "../shared/constants.js";
+import { BGE_QUERY_PREFIX, AVOID_LAMBDA, DEFAULT_MODEL_TIER } from "../shared/constants.js";
 
 // Keyed by tier so switching back and forth doesn't re-download/re-init a
 // model that's already loaded — each tier gets its own memoized extractor.
@@ -114,12 +109,7 @@ onMessage((type, payload, _sender, sendResponse) => {
     const tier = tierOf(payload);
     ensureModel(tier)
       .then(async (e) => {
-        const chunkSize = tier === "large" ? LARGE_MODEL_SCORE_CHUNK_SIZE : videos.length || 1;
-        const results = [];
-        for (let i = 0; i < videos.length; i += chunkSize) {
-          const chunk = videos.slice(i, i + chunkSize);
-          results.push(...(await scoreChunk(e, intentVector, avoidVector, chunk)));
-        }
+        const results = await scoreChunk(e, intentVector, avoidVector, videos);
         const failedCount = videos.length - results.length;
         sendResponse({ ok: true, results, failedCount });
       })

@@ -1,13 +1,15 @@
 import { MSG, onMessage, sendToOffscreen } from "../shared/messaging.js";
 import {
   getSettings,
-  setSettings,
   getProfiles,
   setProfiles,
   getScoreCache,
   setScoreCache,
   clearScoreCacheForProfile,
+  getStats,
+  setStats,
 } from "../shared/storage.js";
+import { recordStat } from "../shared/stats.js";
 import { STORAGE_KEYS, DEFAULT_MODEL_TIER } from "../shared/constants.js";
 import { computeCalibration } from "../shared/scoring.js";
 import { PROBE_TITLES } from "../shared/probe-titles.js";
@@ -73,19 +75,14 @@ async function calibrate(intentVector, avoidVector, tier) {
 
 /**
  * Re-embeds intent/avoid text under `tier` and recalibrates against the
- * probe set — shared by SAVE_PROFILE (when either text changed) and
- * SET_MODEL_TIER (when the model changed but the text didn't), since a
- * tier switch invalidates the old vectors' dimensionality exactly like a
- * text edit invalidates their meaning. Callers are responsible for
- * clearing that profile's score cache afterward (see
- * clearScoreCacheForProfile) — this function only touches vectors.
+ * probe set. Callers are responsible for clearing that profile's score
+ * cache afterward (see clearScoreCacheForProfile) — this function only
+ * touches vectors.
  *
  * `intentChanged`/`avoidChanged` let a caller that knows only one field
- * actually changed (SAVE_PROFILE) skip re-embedding the other and reuse
+ * actually changed skip re-embedding the other and reuse
  * `prevVector`/`prevAvoidVector` instead — calibration still runs fresh
- * either way, since it's a function of both vectors together. A tier
- * switch invalidates both, so SET_MODEL_TIER passes both flags true and
- * has no prior vectors to reuse.
+ * either way, since it's a function of both vectors together.
  */
 async function reembedAndCalibrate({
   intentText,
@@ -98,10 +95,9 @@ async function reembedAndCalibrate({
   prevAvoidVector = null,
 }) {
   await ensureOffscreenDocument();
-  // Force the model to load even if there's no intent text yet (e.g.
-  // switching tiers right after install) — otherwise embedText's
-  // empty-text short-circuit below would skip loading entirely, and a
-  // tier switch with no visible download would look broken.
+  // Force the model to load even if there's no intent text yet —
+  // otherwise embedText's empty-text short-circuit below would skip
+  // loading entirely.
   await sendToOffscreen(MSG.ENSURE_MODEL_LOADED, { tier });
   const vector = intentChanged ? await embedText(intentText, tier) : prevVector;
   const avoidVector = avoidChanged ? await embedText(avoidText, tier) : prevAvoidVector;
@@ -115,6 +111,17 @@ async function reembedAndCalibrate({
 // regardless of caller.
 function normalizeKeywords(list) {
   return (list || []).map((k) => (k || "").trim().toLowerCase()).filter(Boolean);
+}
+
+// Chained so concurrent RECORD_STATs (several YouTube tabs) apply one after
+// another instead of each reading the same stale snapshot and overwriting
+// the others' increments.
+let statsQueue = Promise.resolve();
+function recordStatSerialized(kind, count) {
+  statsQueue = statsQueue
+    .then(async () => setStats(recordStat(await getStats(), kind, new Date(), count)))
+    .catch(() => {});
+  return statsQueue;
 }
 
 onMessage((type, payload, sender, sendResponse) => {
@@ -215,37 +222,10 @@ onMessage((type, payload, sender, sendResponse) => {
     return true;
   }
 
-  if (type === MSG.SET_MODEL_TIER) {
-    (async () => {
-      try {
-        const tier = payload.tier;
-        const profiles = await getProfiles();
-        const nextProfiles = [];
-        for (const profile of profiles) {
-          const result = await reembedAndCalibrate({
-            intentText: profile.intentText,
-            avoidText: profile.avoidText,
-            tier,
-            prevVersion: profile.intentVersion,
-          });
-          await clearScoreCacheForProfile(profile.id);
-          nextProfiles.push({
-            ...profile,
-            intentVector: result.vector,
-            avoidVector: result.avoidVector,
-            intentVersion: result.version,
-            calibration: result.calibration,
-          });
-        }
-        await setProfiles(nextProfiles);
-        await setSettings({ [STORAGE_KEYS.MODEL_TIER]: tier });
-
-        sendResponse({ ok: true });
-      } catch (err) {
-        sendResponse({ ok: false, error: String(err) });
-      }
-    })();
-    return true;
+  if (type === MSG.RECORD_STAT) {
+    recordStatSerialized(payload.kind, payload.count);
+    sendResponse({ ok: true });
+    return undefined;
   }
 
   return undefined;

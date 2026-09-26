@@ -1,12 +1,11 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
 import { startTour } from "../shared/tour.js";
-import { getSettings, setSettings, getProfiles, setProfiles, updateProfileFields, deleteProfile } from "../shared/storage.js";
+import { getSettings, setSettings, getProfiles, setProfiles, updateProfileFields, deleteProfile, getStats } from "../shared/storage.js";
+import { lastNDays, sumSeries, dayKey } from "../shared/stats.js";
+import { renderStatsChart } from "./stats-chart.js";
 import { createProfile, pickActiveProfile } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE, MAX_PROFILES } from "../shared/constants.js";
-// Model tier switching is disabled for now (see commented-out block below
-// and in options.html) — re-add DEFAULT_MODEL_TIER, MODEL_TIERS to the
-// import above when re-enabling it.
 
 const TOUR_STEPS = [
   { selector: ".switch", text: "Master switch — pause or resume the whole extension instantly." },
@@ -19,14 +18,14 @@ const TOUR_STEPS = [
   { selector: "#include-chips", text: "Always show — exact keywords that force a video to show, no matter the score." },
   { selector: "#exclude-chips", text: "Always hide — exact keywords that force a video to hide, no matter the score." },
   { selector: ".toggle-label", text: "Active hours — optionally only use this profile during set hours. Off by default." },
+  { selector: "#hardcore-row", text: "Hardcore mode — hides the filtered-videos list so nothing can be unhidden. Per profile, and only changeable here — not from the popup." },
 ];
 
 const intentEl = document.getElementById("intent");
 const avoidEl = document.getElementById("avoid");
 const intentCounterEl = document.getElementById("intent-counter");
 const avoidCounterEl = document.getElementById("avoid-counter");
-// const modelTierEl = document.getElementById("model-tier");
-// const modelTierStatusEl = document.getElementById("model-tier-status");
+const hardcoreEl = document.getElementById("hardcore-mode");
 const extensionEnabledEl = document.getElementById("extension-enabled");
 const welcomeBannerEl = document.getElementById("welcome-banner");
 const welcomeStartEl = document.getElementById("welcome-start");
@@ -116,6 +115,7 @@ function loadProfileIntoForm(profile) {
   weekendEndEl.value = schedule.weekend.end;
   scheduleEnabledEl.checked = !!profile.scheduleEnabled;
   syncScheduleRowsVisibility();
+  hardcoreEl.checked = !!profile.hardcoreMode;
 }
 
 async function commitProfileRename(profile, input, item) {
@@ -234,17 +234,9 @@ deleteProfileBtn.addEventListener("click", async () => {
   setStatus("Deleted.");
 });
 
-// let currentTier = DEFAULT_MODEL_TIER;
-//
-// function tierFromCheckbox(checked) {
-//   return checked ? "large" : "small";
-// }
-
 async function load() {
   const settings = await getSettings();
   extensionEnabledEl.checked = settings[STORAGE_KEYS.EXTENSION_ENABLED] !== false;
-  // currentTier = settings[STORAGE_KEYS.MODEL_TIER] || DEFAULT_MODEL_TIER;
-  // modelTierEl.checked = currentTier === "large";
 
   profiles = await getProfiles();
   const active = pickActiveProfile(profiles);
@@ -286,39 +278,15 @@ extensionEnabledEl.addEventListener("change", () => {
   setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
 });
 
-// Model tier switching UI disabled for now — sticking to the small bundled
-// model only. Re-enable by uncommenting this listener, the state/helpers
-// above, and the markup in options.html.
-//
-// modelTierEl.addEventListener("change", async () => {
-//   const nextTier = tierFromCheckbox(modelTierEl.checked);
-//   if (nextTier === currentTier) return;
-//
-//   if (nextTier === "large") {
-//     const proceed = confirm(
-//       `Switch to ${MODEL_TIERS.large.label}? It downloads ${MODEL_TIERS.large.sizeLabel} and is slower per batch.`
-//     );
-//     if (!proceed) {
-//       modelTierEl.checked = currentTier === "large";
-//       return;
-//     }
-//   }
-//
-//   modelTierEl.disabled = true;
-//   modelTierStatusEl.textContent = nextTier === "large" ? "Downloading model…" : "Switching model…";
-//   try {
-//     const response = await sendToBackground(MSG.SET_MODEL_TIER, { tier: nextTier });
-//     if (response && response.ok) {
-//       currentTier = nextTier;
-//       modelTierStatusEl.textContent = "Model ready.";
-//     } else {
-//       modelTierEl.checked = currentTier === "large";
-//       modelTierStatusEl.textContent = `Error: ${(response && response.error) || "unknown"}`;
-//     }
-//   } finally {
-//     modelTierEl.disabled = false;
-//   }
-// });
+// Applies instantly, like the kill switch — open YouTube tabs pick it up
+// through chrome.storage.onChanged.
+hardcoreEl.addEventListener("change", async () => {
+  const profile = currentProfile();
+  if (!profile) return;
+  const updated = await updateProfileFields(profile.id, { hardcoreMode: hardcoreEl.checked });
+  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
+  setStatus(hardcoreEl.checked ? "Hardcore mode on." : "Hardcore mode off.");
+});
 
 scheduleEnabledEl.addEventListener("change", () => {
   syncScheduleRowsVisibility();
@@ -327,24 +295,6 @@ scheduleEnabledEl.addEventListener("change", () => {
 for (const el of [weekdayStartEl, weekdayEndEl, weekendStartEl, weekendEndEl]) {
   el.addEventListener("input", scheduleLiveSave);
 }
-
-// Drove the model-tier download status text; no-op while tier switching is
-// disabled (see above).
-// chrome.runtime.onMessage.addListener((message) => {
-//   if (!message) return;
-//   if (message.type === MSG.MODEL_DOWNLOAD_PROGRESS) {
-//     const p = message.payload;
-//     if (p && p.status === "progress") {
-//       modelTierStatusEl.textContent = `Loading model… ${Math.round(p.progress || 0)}%`;
-//     } else {
-//       modelTierStatusEl.textContent = "Loading model…";
-//     }
-//   } else if (message.type === MSG.MODEL_READY) {
-//     modelTierStatusEl.textContent = "Model ready.";
-//   } else if (message.type === MSG.MODEL_ERROR) {
-//     modelTierStatusEl.textContent = `Model error: ${message.payload && message.payload.message}`;
-//   }
-// });
 
 saveBtn.addEventListener("click", async () => {
   const profile = currentProfile();
@@ -374,4 +324,50 @@ saveBtn.addEventListener("click", async () => {
   }
 });
 
+// ---- Progress (stats) ----
+const RANGE_KEY = "yif_stats_range";
+let statsRange = 14;
+try {
+  const saved = Number(localStorage.getItem(RANGE_KEY));
+  if ([7, 14, 30].includes(saved)) statsRange = saved;
+} catch {
+  // localStorage can throw when site data is blocked; default range is fine.
+}
+
+async function renderStats() {
+  const stats = await getStats();
+  const today = stats[dayKey()] || {};
+  const series = lastNDays(stats, statsRange);
+  const totals = sumSeries(series);
+  document.getElementById("stat-filtered-today").textContent = today.filtered || 0;
+  document.getElementById("stat-unhidden-today").textContent = today.unhides || 0;
+  document.getElementById("stat-filtered-range").textContent = totals.filtered;
+  document.getElementById("stat-unhidden-range").textContent = totals.unhides;
+  document.getElementById("stat-filtered-range-label").textContent = `Filtered (${statsRange} days)`;
+  document.getElementById("stat-unhidden-range-label").textContent = `Unhidden (${statsRange} days)`;
+  document.getElementById("stats-empty").hidden = totals.filtered + totals.unhides > 0;
+  renderStatsChart(document.getElementById("stats-chart"), series);
+}
+
+for (const btn of document.querySelectorAll("#range-toggle button")) {
+  btn.addEventListener("click", () => {
+    statsRange = Number(btn.dataset.days);
+    try {
+      localStorage.setItem(RANGE_KEY, String(statsRange));
+    } catch {
+      // Non-fatal: the choice just won't persist.
+    }
+    for (const b of document.querySelectorAll("#range-toggle button")) {
+      b.classList.toggle("active", b === btn);
+    }
+    renderStats();
+  });
+  btn.classList.toggle("active", Number(btn.dataset.days) === statsRange);
+}
+
+chrome.storage.onChanged.addListener((changes, area) => {
+  if (area === "local" && STORAGE_KEYS.STATS in changes) renderStats();
+});
+
+renderStats();
 load();

@@ -1,57 +1,25 @@
 import { pipeline, env } from "@xenova/transformers";
 import { MODEL_TIERS } from "../shared/constants.js";
-import { createLogger } from "../shared/log.js";
 
-const log = createLogger("model-loader");
-
-// Safe default until loadModel() sets it per-tier below — never fetch
-// remotely before a tier has explicitly opted in.
+// The model ships inside the extension package (see scripts/fetch-model.mjs
+// and build.mjs) — remote loading stays permanently off, so nothing is ever
+// fetched at runtime.
 env.allowRemoteModels = false;
 env.allowLocalModels = true;
 env.localModelPath = chrome.runtime.getURL("models/");
 env.backends.onnx.wasm.wasmPaths = chrome.runtime.getURL("models/wasm/");
 
-// The multi-threaded onnxruntime-web backend spins up a Worker that calls
-// importScripts() on a blob: URL — the manifest's CSP now allows blob:
-// workers specifically so this can work, but it's still an environment
-// with a documented history of breaking here, so loadExtractor() tries it
-// only for tiers that opt in (MODEL_TIERS[tier].threaded) and falls back
-// to the always-safe single-threaded path below on any failure.
+// Single-threaded WASM only: the multi-threaded backend spins up a Worker
+// that calls importScripts() on a blob: URL, which has a documented history
+// of breaking inside extension pages.
 env.backends.onnx.wasm.proxy = false;
+env.backends.onnx.wasm.numThreads = 1;
 
 const extractorPromises = new Map();
-
-async function loadThreaded(tierConfig, onProgress) {
-  env.backends.onnx.wasm.numThreads = Math.min(4, (typeof navigator !== "undefined" && navigator.hardwareConcurrency) || 4);
-  try {
-    const extractor = await pipeline("feature-extraction", tierConfig.id, {
-      quantized: true,
-      progress_callback: onProgress,
-    });
-    log.log(`${tierConfig.id}: loaded with ${env.backends.onnx.wasm.numThreads} threads`);
-    return extractor;
-  } catch (err) {
-    log.warn(`${tierConfig.id}: threaded WASM load failed, falling back to single-threaded`, err);
-    return null;
-  }
-}
 
 async function loadModel(tier, onProgress) {
   const tierConfig = MODEL_TIERS[tier];
   if (!tierConfig) throw new Error(`Unknown model tier: ${tier}`);
-
-  // Global on the shared `env` singleton — safe because only one
-  // loadExtractor() call is ever in flight at a time in this codebase's
-  // message-passing flow (offscreen.js memoizes per tier before calling
-  // this again).
-  env.allowRemoteModels = tierConfig.remote;
-
-  if (tierConfig.threaded) {
-    const extractor = await loadThreaded(tierConfig, onProgress);
-    if (extractor) return extractor;
-  }
-
-  env.backends.onnx.wasm.numThreads = 1;
   return pipeline("feature-extraction", tierConfig.id, {
     quantized: true,
     progress_callback: onProgress,

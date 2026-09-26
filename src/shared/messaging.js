@@ -15,7 +15,11 @@ export const MSG = {
   // round-trip through the background service worker just to reach
   // storage it already has direct access to.
   SAVE_PROFILE: "SAVE_PROFILE",
-  SET_MODEL_TIER: "SET_MODEL_TIER",
+
+  // Fire-and-forget from the content script: { kind: "unhides" | "filtered",
+  // count }. The background service worker is the single writer of
+  // STORAGE_KEYS.STATS so several open YouTube tabs can't race each other.
+  RECORD_STAT: "RECORD_STAT",
 
   GET_FILTERED_VIDEOS: "GET_FILTERED_VIDEOS",
   UNHIDE_VIDEO: "UNHIDE_VIDEO",
