@@ -64,3 +64,12 @@ test("sumSeries: totals both counters", () => {
     { unhides: 4, filtered: 6 }
   );
 });
+
+test("recordStat tracks hardcore pauses and refunds unused minutes", () => {
+  const d = new Date("2026-09-26T12:00:00");
+  let s = recordStat({}, "hardcoreOffs", d);
+  s = recordStat(s, "hardcoreOffMinutes", d, 30);
+  s = recordStat(s, "hardcoreOffMinutes", d, -10);
+  assert.deepEqual(s["2026-09-26"], { unhides: 0, filtered: 0, hardcoreOffs: 1, hardcoreOffMinutes: 20 });
+  assert.deepEqual(recordStat({}, "unhides", d, -1), {});
+});

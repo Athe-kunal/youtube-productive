@@ -25,7 +25,16 @@ export function createProfile(name) {
     // (enforced in the content script). Off by default; profiles saved
     // before this field existed read as undefined, i.e. off.
     hardcoreMode: false,
+    // Epoch ms until which hardcore is temporarily paused from the popup
+    // (max HARDCORE_PAUSE_MAX_MINUTES); 0/undefined means not paused.
+    hardcoreOffUntil: 0,
   };
+}
+
+export const HARDCORE_PAUSE_MAX_MINUTES = 60;
+
+export function isHardcoreActive(profile, now = Date.now()) {
+  return !!(profile && profile.hardcoreMode && !(profile.hardcoreOffUntil > now));
 }
 
 /**

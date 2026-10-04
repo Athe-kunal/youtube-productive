@@ -71,6 +71,20 @@
 
       <hr />
 
+      <section id="hardcore-section" hidden>
+        <p class="section-heading">🔒 Hardcore mode</p>
+        <p class="hint" id="hardcore-status"></p>
+        <div class="schedule-row" id="hardcore-pause-row">
+          <input type="number" id="hardcore-minutes" min="1" max="60" step="1" value="15" />
+          <span>min (1–60)</span>
+          <button id="hardcore-pause" type="button">Switch off</button>
+        </div>
+        <button id="hardcore-resume" type="button" hidden>Switch back on now</button>
+        <p class="stats-line" id="hardcore-stats" role="status"></p>
+      </section>
+
+      <hr />
+
       <section id="filtered-section">
         <p class="section-heading">⬇️ Filtered on this page</p>
         <p class="stats-line" id="today-stats" role="status"></p>
