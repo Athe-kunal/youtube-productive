@@ -2,7 +2,7 @@ import { MSG, sendToBackground } from "../shared/messaging.js";
 import { resolveDecision } from "../shared/keyword-filter.js";
 import { calibratedCutoff } from "../shared/scoring.js";
 import { getSettings, getProfiles, getScoreCache, setScoreCache } from "../shared/storage.js";
-import { pickActiveProfile } from "../shared/profiles.js";
+import { pickActiveProfile, isHardcoreActive } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEBOUNCE_MS, CACHE_FLUSH_DEBOUNCE_MS, MAX_SCORE_ATTEMPTS, DEFAULT_SENSITIVITY_K, SCHEDULE_RECHECK_MS } from "../shared/constants.js";
 import { ADAPTIVE_SCORE_CHUNK_SIZE, EXTRACT_YIELD_EVERY, yieldToMain } from "../shared/device.js";
 import { getPageConfig } from "./selectors.js";
@@ -34,7 +34,20 @@ const manualShows = new Set();
 // while it's on, the filtered list is withheld and UNHIDE_VIDEO is refused,
 // so there's no path (popup or otherwise) to reveal a filtered card.
 function isHardcore() {
-  return !!(activeProfile && activeProfile.hardcoreMode);
+  return isHardcoreActive(activeProfile);
+}
+
+// A popup pause ends on its own: re-apply the filter the moment it expires.
+let hardcoreResumeTimer = null;
+function scheduleHardcoreResume() {
+  clearTimeout(hardcoreResumeTimer);
+  const until = activeProfile && activeProfile.hardcoreOffUntil;
+  if (!(activeProfile && activeProfile.hardcoreMode && until > Date.now())) return;
+  hardcoreResumeTimer = setTimeout(() => {
+    manualShows.clear();
+    scheduleFilterStateBroadcast();
+    reapplyFromCache();
+  }, until - Date.now() + 100);
 }
 
 function recordStat(kind, count = 1) {
@@ -50,6 +63,7 @@ async function loadState() {
   globalSettings = await getSettings();
   profiles = await getProfiles();
   activeProfile = pickActiveProfile(profiles);
+  scheduleHardcoreResume();
   const persisted = await getScoreCache();
   scoreCache.clear();
   for (const [key, entry] of Object.entries(persisted)) {
@@ -583,6 +597,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
       (activeProfile && nextActive && activeProfile.intentVersion !== nextActive.intentVersion);
     const wasHardcore = isHardcore();
     activeProfile = nextActive;
+    scheduleHardcoreResume();
     if (wasHardcore !== isHardcore()) {
       // Turning hardcore on discards any earlier "show anyway" clicks so
       // those cards go back under the filter; either way the popup's

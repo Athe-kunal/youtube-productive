@@ -1,9 +1,9 @@
-// Daily usage counters: { "YYYY-MM-DD": { unhides, filtered } }, keyed by
+// Daily usage counters: { "YYYY-MM-DD": { unhides, filtered, hardcoreOffs?, hardcoreOffMinutes? } }, keyed by
 // the user's local date. Pure functions only — persistence lives in the
 // background service worker (RECORD_STAT), which is the single writer.
 export const STATS_RETENTION_DAYS = 90;
 
-const KINDS = ["unhides", "filtered"];
+const KINDS = ["unhides", "filtered", "hardcoreOffs", "hardcoreOffMinutes"];
 
 function pad(n) {
   return String(n).padStart(2, "0");
@@ -29,11 +29,13 @@ export function pruneStats(stats, keepDays = STATS_RETENTION_DAYS, date = new Da
 }
 
 export function recordStat(stats, kind, date = new Date(), count = 1) {
-  if (!KINDS.includes(kind) || !(count > 0)) return stats || {};
+  // hardcoreOffMinutes may go negative: ending a pause early refunds the unused part.
+  const refund = kind === "hardcoreOffMinutes" && count < 0;
+  if (!KINDS.includes(kind) || !(count > 0 || refund)) return stats || {};
   const key = dayKey(date);
   const base = pruneStats(stats, STATS_RETENTION_DAYS, date);
   const day = base[key] || { unhides: 0, filtered: 0 };
-  return { ...base, [key]: { ...day, [kind]: day[kind] + count } };
+  return { ...base, [key]: { ...day, [kind]: Math.max(0, (day[kind] || 0) + count) } };
 }
 
 // Oldest → newest, always `n` entries ending today, zero-filled so the

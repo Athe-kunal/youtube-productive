@@ -1,8 +1,8 @@
 import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
-import { getProfiles, getStats } from "../shared/storage.js";
+import { getProfiles, getStats, updateProfileFields } from "../shared/storage.js";
 import { dayKey } from "../shared/stats.js";
-import { pickActiveProfile } from "../shared/profiles.js";
+import { pickActiveProfile, isHardcoreActive, HARDCORE_PAUSE_MAX_MINUTES } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 
 const intentEl = document.getElementById("intent");
@@ -45,8 +45,77 @@ document.getElementById("full-settings-btn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
-// Deliberately no master switch or hardcore toggle here — both live only in
-// full settings, so turning the filter off takes more than one casual click.
+// No master switch here — it lives only in full settings. Hardcore mode can
+// only be paused here for a bounded time (max 1 hour) and resumes by itself;
+// every pause is counted in the stats.
+const hardcoreSectionEl = document.getElementById("hardcore-section");
+const hardcoreStatusEl = document.getElementById("hardcore-status");
+const hardcoreMinutesEl = document.getElementById("hardcore-minutes");
+const hardcorePauseRow = document.getElementById("hardcore-pause-row");
+const hardcoreResumeBtn = document.getElementById("hardcore-resume");
+const hardcoreStatsEl = document.getElementById("hardcore-stats");
+let hardcoreTimer = null;
+
+function renderHardcore() {
+  clearTimeout(hardcoreTimer);
+  const profile = currentProfile();
+  hardcoreSectionEl.hidden = !(profile && profile.hardcoreMode);
+  if (hardcoreSectionEl.hidden) return;
+  const left = (profile.hardcoreOffUntil || 0) - Date.now();
+  const paused = left > 0;
+  hardcorePauseRow.hidden = paused;
+  hardcoreResumeBtn.hidden = !paused;
+  if (paused) {
+    const mins = Math.ceil(left / 60000);
+    hardcoreStatusEl.textContent = `Off for ${mins} more min — back on automatically.`;
+    hardcoreTimer = setTimeout(renderHardcore, Math.min(left, 15000) + 50);
+  } else {
+    hardcoreStatusEl.textContent = "On — filtered videos can't be unhidden.";
+  }
+}
+
+async function renderHardcoreStats() {
+  const stats = await getStats();
+  let offs = 0;
+  let minutes = 0;
+  for (const day of Object.values(stats)) {
+    offs += day.hardcoreOffs || 0;
+    minutes += day.hardcoreOffMinutes || 0;
+  }
+  hardcoreStatsEl.textContent = `Switched off ${offs} time${offs === 1 ? "" : "s"} · ${minutes} min total`;
+}
+
+async function setHardcorePause(minutes) {
+  const profile = currentProfile();
+  if (!profile) return;
+  const updated = await updateProfileFields(profile.id, {
+    hardcoreOffUntil: minutes > 0 ? Date.now() + minutes * 60000 : 0,
+  });
+  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
+  renderHardcore();
+}
+
+document.getElementById("hardcore-pause").addEventListener("click", async () => {
+  const minutes = Math.min(
+    HARDCORE_PAUSE_MAX_MINUTES,
+    Math.max(1, Math.round(Number(hardcoreMinutesEl.value) || 0))
+  );
+  hardcoreMinutesEl.value = minutes;
+  await setHardcorePause(minutes);
+  sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
+  sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: minutes }).catch(() => {});
+});
+
+hardcoreResumeBtn.addEventListener("click", async () => {
+  // Ending early: refund the unused minutes so the tally reflects time
+  // actually spent with hardcore off.
+  const profile = currentProfile();
+  const unused = Math.floor(((profile && profile.hardcoreOffUntil) - Date.now()) / 60000);
+  await setHardcorePause(0);
+  if (unused > 0) {
+    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: -unused }).catch(() => {});
+  }
+});
 
 function readSchedule() {
   return {
@@ -76,7 +145,10 @@ async function renderTodayStats() {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  if (STORAGE_KEYS.STATS in changes) renderTodayStats();
+  if (STORAGE_KEYS.STATS in changes) {
+    renderTodayStats();
+    renderHardcoreStats();
+  }
 });
 
 function currentProfile() {
@@ -98,6 +170,7 @@ function loadProfileIntoForm(profile) {
   weekendEndEl.value = schedule.weekend.end;
   scheduleEnabledEl.checked = !!profile.scheduleEnabled;
   syncScheduleRowsVisibility();
+  renderHardcore();
 
   const active = pickActiveProfile(profiles);
   profileHintEl.textContent =
@@ -129,6 +202,7 @@ async function loadSettings() {
   renderProfileOptions();
   loadProfileIntoForm(currentProfile());
   renderTodayStats();
+  renderHardcoreStats();
 }
 
 saveBtn.addEventListener("click", async () => {
