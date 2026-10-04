@@ -63,7 +63,10 @@ export function startTour(steps, { onFinish } = {}) {
     highlight.style.height = `${rect.height + pad * 2}px`;
 
     tooltip.style.top = `${rect.bottom + window.scrollY + 10}px`;
-    tooltip.style.left = `${Math.max(12, rect.left + window.scrollX)}px`;
+    // Keep the tooltip inside the viewport — targets near the right edge
+    // (e.g. the master switch) would otherwise push it off-screen.
+    const maxLeft = document.documentElement.clientWidth - tooltip.offsetWidth - 12;
+    tooltip.style.left = `${Math.max(12, Math.min(rect.left, maxLeft)) + window.scrollX}px`;
   }
 
   function render() {

@@ -43,9 +43,9 @@ test("lastNDays: oldest to newest, zero-filled, ending today", () => {
   const stats = { "2026-09-25": { unhides: 2, filtered: 7 } };
   const series = lastNDays(stats, 3, D("2026-09-26"));
   assert.deepEqual(series, [
-    { date: "2026-09-24", unhides: 0, filtered: 0 },
-    { date: "2026-09-25", unhides: 2, filtered: 7 },
-    { date: "2026-09-26", unhides: 0, filtered: 0 },
+    { date: "2026-09-24", unhides: 0, filtered: 0, hardcoreOffs: 0, hardcoreOffMinutes: 0 },
+    { date: "2026-09-25", unhides: 2, filtered: 7, hardcoreOffs: 0, hardcoreOffMinutes: 0 },
+    { date: "2026-09-26", unhides: 0, filtered: 0, hardcoreOffs: 0, hardcoreOffMinutes: 0 },
   ]);
 });
 
@@ -58,11 +58,21 @@ test("lastNDays: tolerates null stats", () => {
   assert.equal(lastNDays(null, 2, D("2026-09-26")).length, 2);
 });
 
-test("sumSeries: totals both counters", () => {
+test("sumSeries: totals every counter", () => {
   assert.deepEqual(
-    sumSeries([{ date: "a", unhides: 1, filtered: 2 }, { date: "b", unhides: 3, filtered: 4 }]),
-    { unhides: 4, filtered: 6 }
+    sumSeries([
+      { date: "a", unhides: 1, filtered: 2, hardcoreOffs: 1, hardcoreOffMinutes: 15 },
+      { date: "b", unhides: 3, filtered: 4 },
+    ]),
+    { unhides: 4, filtered: 6, hardcoreOffs: 1, hardcoreOffMinutes: 15 }
   );
+});
+
+test("lastNDays: carries hardcore pause counters", () => {
+  const stats = { "2026-09-26": { unhides: 0, filtered: 0, hardcoreOffs: 2, hardcoreOffMinutes: 25 } };
+  const [day] = lastNDays(stats, 1, D("2026-09-26"));
+  assert.equal(day.hardcoreOffs, 2);
+  assert.equal(day.hardcoreOffMinutes, 25);
 });
 
 test("recordStat tracks hardcore pauses and refunds unused minutes", () => {

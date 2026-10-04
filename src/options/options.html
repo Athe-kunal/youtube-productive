@@ -2,28 +2,32 @@
 <html>
   <head>
     <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>YouTube Intent Filter</title>
     <link rel="stylesheet" href="options.css" />
   </head>
   <body>
     <main>
-      <div class="header-row">
-        <div>
-          <h1>YouTube Intent Filter</h1>
-          <p class="subtitle">
-            A YouTube recommendation filter — we hide what you don't want, we never recommend
-            anything new. Everything runs on your device.
-          </p>
-          <button type="button" id="tour-link" class="tour-link">Take the tour</button>
+      <header class="header-row">
+        <div class="brand">
+          <img class="brand-logo" src="../icons/icon128.png" alt="" />
+          <div>
+            <h1>YouTube Intent Filter</h1>
+            <p class="subtitle">
+              A YouTube recommendation filter — we hide what you don't want, we never recommend
+              anything new. Everything runs on your device.
+            </p>
+            <button type="button" id="tour-link" class="tour-link">Take the tour</button>
+          </div>
         </div>
-        <label class="switch" title="Enable/disable the extension">
+        <label class="switch" title="Turn the extension on or off">
           <input type="checkbox" id="extension-enabled" checked />
           <span class="switch-track"></span>
         </label>
-      </div>
+      </header>
 
-      <section class="progress" id="progress-section" aria-labelledby="progress-heading">
-        <div class="progress-head">
+      <section class="card progress" id="progress-section" aria-labelledby="progress-heading">
+        <div class="card-head">
           <h2 id="progress-heading">Your progress</h2>
           <div class="range-toggle" id="range-toggle" role="group" aria-label="Chart range">
             <button type="button" data-days="7">7d</button>
@@ -57,96 +61,133 @@
         <p class="hint" id="stats-empty" hidden>
           No activity yet — filtered and unhidden videos will show up here as you browse YouTube.
         </p>
+
+        <div class="hardcore-progress" id="hardcore-progress" hidden>
+          <h3>🔒 Hardcore mode: minutes switched off per day</h3>
+          <div class="stat-tiles stat-tiles-2">
+            <div class="stat-tile">
+              <span class="stat-value" id="stat-hardcore-offs">0</span>
+              <span class="stat-label" id="stat-hardcore-offs-label">Times switched off (14 days)</span>
+            </div>
+            <div class="stat-tile">
+              <span class="stat-value" id="stat-hardcore-minutes">0</span>
+              <span class="stat-label" id="stat-hardcore-minutes-label">Minutes off (14 days)</span>
+            </div>
+          </div>
+          <div id="hardcore-chart" class="stats-chart"></div>
+          <p class="hint" id="hardcore-empty" hidden>
+            Hardcore mode hasn't been switched off in this period — nice.
+          </p>
+        </div>
       </section>
 
-      <div id="welcome-banner" class="welcome-banner" hidden>
-        <p>👋 We're here to help you avoid falling into the YouTube rabbit hole.</p>
-        <div class="welcome-actions">
-          <button type="button" id="welcome-skip" class="tour-skip">Skip</button>
-          <button type="button" id="welcome-start" class="tour-next">Start tour</button>
+      <section class="card settings" aria-labelledby="settings-heading">
+        <div class="card-head">
+          <h2 id="settings-heading">Profiles</h2>
+          <div class="profile-bar-actions">
+            <button type="button" id="add-profile-btn" class="ghost-btn">+ Add profile</button>
+            <button type="button" id="delete-profile-btn" class="ghost-btn ghost-danger">Delete</button>
+          </div>
         </div>
-      </div>
-
-      <div class="profile-bar">
         <div class="profile-tabs" id="profile-tabs"></div>
-        <div class="profile-bar-actions">
-          <button type="button" id="add-profile-btn" class="ghost-btn">+ Add profile</button>
-          <button type="button" id="delete-profile-btn" class="ghost-btn">Delete</button>
+        <p class="hint">
+          Up to 3 profiles, each with its own intent, keywords, and active hours — e.g. one for 9-5
+          work focus and another for evenings. Whichever profile's hours match right now is used; a
+          profile with no active-hours restriction acts as the fallback when none do.
+        </p>
+
+        <div class="field-group">
+          <div class="field">
+            <div class="label-row">
+              <label for="intent">Show me</label>
+              <span class="char-counter" id="intent-counter">140 characters left</span>
+            </div>
+            <textarea
+              id="intent"
+              rows="4"
+              maxlength="140"
+              placeholder="AI research, systems, distributed training"
+            ></textarea>
+          </div>
+
+          <div class="field">
+            <div class="label-row">
+              <label for="avoid">Avoid <span class="optional">optional</span></label>
+              <span class="char-counter" id="avoid-counter">140 characters left</span>
+            </div>
+            <textarea
+              id="avoid"
+              rows="2"
+              maxlength="140"
+              placeholder="football, celebrity drama"
+            ></textarea>
+            <p class="hint">
+              Describe what you'd rather not see. Write it here, not in "Show me" above — putting
+              "no football" up there tends to backfire and show you more football, not less.
+            </p>
+          </div>
+
+          <div class="field-pair">
+            <div class="field">
+              <label>Always show</label>
+              <div id="include-chips" class="chip-container chip-include"></div>
+            </div>
+            <div class="field">
+              <label>Always hide</label>
+              <div id="exclude-chips" class="chip-container chip-exclude"></div>
+            </div>
+          </div>
+          <p class="hint">Keywords — type a word and press Enter to add it.</p>
         </div>
-      </div>
-      <p class="hint">
-        Up to 3 profiles, each with its own intent, keywords, and active hours — e.g. one for 9-5
-        work focus and another for evenings. Whichever profile's hours match right now is used; a
-        profile with no active-hours restriction acts as the fallback when none do.
-      </p>
 
-      <label for="intent">Show me</label>
-      <textarea
-        id="intent"
-        rows="4"
-        maxlength="140"
-        placeholder="AI research, systems, distributed training"
-      ></textarea>
-      <p class="char-counter" id="intent-counter">140 characters left</p>
+        <div class="option-list">
+          <div class="option">
+            <label class="toggle-label">
+              <span class="option-text">
+                <span class="option-title">Only active during set hours</span>
+                <span class="hint">
+                  Outside these hours this profile is skipped — another matching profile (or the
+                  fallback one) takes over instead.
+                </span>
+              </span>
+              <input type="checkbox" id="schedule-enabled" class="toggle" />
+            </label>
+            <div id="schedule-rows" hidden>
+              <div class="schedule-row">
+                <span class="schedule-label">Weekdays</span>
+                <input type="time" id="weekday-start" />
+                <span class="sep">to</span>
+                <input type="time" id="weekday-end" />
+              </div>
+              <div class="schedule-row">
+                <span class="schedule-label">Weekends</span>
+                <input type="time" id="weekend-start" />
+                <span class="sep">to</span>
+                <input type="time" id="weekend-end" />
+              </div>
+            </div>
+          </div>
 
-      <label for="avoid">Avoid (optional)</label>
-      <textarea
-        id="avoid"
-        rows="2"
-        maxlength="140"
-        placeholder="football, celebrity drama"
-      ></textarea>
-      <p class="char-counter" id="avoid-counter">140 characters left</p>
-      <p class="hint">
-        Describe what you'd rather not see. Write it here, not in "Show me" above — putting
-        "no football" up there tends to backfire and show you more football, not less.
-      </p>
-
-
-
-      <label>Always show (keywords)</label>
-      <div id="include-chips" class="chip-container"></div>
-      <p class="hint">Type a word and press Enter</p>
-
-      <label>Always hide (keywords)</label>
-      <div id="exclude-chips" class="chip-container"></div>
-      <p class="hint">Type a word and press Enter.</p>
-
-      <label class="toggle-label">
-        <input type="checkbox" id="schedule-enabled" />
-        Only active during set hours
-      </label>
-      <p class="hint">
-        Outside these hours this profile is skipped — another matching profile (or the fallback
-        one) takes over instead.
-      </p>
-      <div id="schedule-rows" hidden>
-        <div class="schedule-row">
-          <span class="schedule-label">Weekdays</span>
-          <input type="time" id="weekday-start" />
-          <span>to</span>
-          <input type="time" id="weekday-end" />
+          <div class="option option-hardcore">
+            <label class="toggle-label" id="hardcore-row">
+              <span class="option-text">
+                <span class="option-title">🔒 Hardcore mode</span>
+                <span class="hint">
+                  While on, filtered videos are never listed and can't be unhidden from the popup.
+                  This setting (and the master on/off switch) can only be changed here, not from
+                  the popup. Applies to this profile.
+                </span>
+              </span>
+              <input type="checkbox" id="hardcore-mode" class="toggle" />
+            </label>
+          </div>
         </div>
-        <div class="schedule-row">
-          <span class="schedule-label">Weekends</span>
-          <input type="time" id="weekend-start" />
-          <span>to</span>
-          <input type="time" id="weekend-end" />
+
+        <div class="save-bar">
+          <span id="status" role="status"></span>
+          <button id="save" class="btn-primary">Save</button>
         </div>
-      </div>
-
-      <label class="toggle-label" id="hardcore-row">
-        <input type="checkbox" id="hardcore-mode" />
-        Hardcore mode
-      </label>
-      <p class="hint">
-        While on, filtered videos are never listed and can't be unhidden from the popup. This
-        setting (and the master on/off switch) can only be changed here, not from the popup.
-        Applies to this profile.
-      </p>
-
-      <button id="save">Save</button>
-      <span id="status" role="status"></span>
+      </section>
     </main>
     <script type="module" src="options.js"></script>
   </body>

@@ -1,7 +1,7 @@
-// Dependency-free inline-SVG grouped bar chart: two bars per day (videos
-// filtered vs. videos unhidden). Colors come from CSS custom properties on
-// the container (--chart-filtered / --chart-unhidden) so the stylesheet owns
-// the palette.
+// Dependency-free inline-SVG grouped bar chart: one bar per configured
+// series per day (by default videos filtered vs. videos unhidden). Bar
+// colors come from the CSS classes in `bars`, so the stylesheet owns the
+// palette.
 const SVG_NS = "http://www.w3.org/2000/svg";
 
 const WIDTH = 520;
@@ -34,20 +34,33 @@ function shortDate(key) {
   return `${Number(m)}/${Number(d)}`;
 }
 
-export function renderStatsChart(container, series) {
+const DEFAULT_OPTIONS = {
+  bars: [
+    { key: "filtered", cls: "chart-bar-filtered" },
+    { key: "unhides", cls: "chart-bar-unhidden" },
+  ],
+  ariaLabel: "Videos filtered and unhidden per day",
+  tooltip: (day) => `${day.date}: ${day.filtered} filtered, ${day.unhides} unhidden`,
+};
+
+export function renderStatsChart(container, series, options = {}) {
+  const { bars, ariaLabel, tooltip } = { ...DEFAULT_OPTIONS, ...options };
   container.replaceChildren();
 
-  const max = niceMax(Math.max(0, ...series.flatMap((d) => [d.filtered, d.unhides])));
+  const max = niceMax(Math.max(0, ...series.flatMap((d) => bars.map((b) => d[b.key]))));
   const plotW = WIDTH - MARGIN.left - MARGIN.right;
   const plotH = HEIGHT - MARGIN.top - MARGIN.bottom;
   const slot = plotW / series.length;
-  const barW = Math.max(2, Math.min(14, slot * 0.36));
+  // A lone series gets a wider bar so a single-measure chart doesn't look sparse.
+  const barW = Math.max(2, Math.min(bars.length === 1 ? 22 : 14, slot * (bars.length === 1 ? 0.6 : 0.36)));
+  const gap = 2;
+  const groupW = bars.length * barW + (bars.length - 1) * gap;
   const y = (v) => MARGIN.top + plotH - (v / max) * plotH;
 
   const root = svg("svg", {
     viewBox: `0 0 ${WIDTH} ${HEIGHT}`,
     role: "img",
-    "aria-label": "Videos filtered and unhidden per day",
+    "aria-label": ariaLabel,
     class: "stats-svg",
   });
 
@@ -65,20 +78,15 @@ export function renderStatsChart(container, series) {
   series.forEach((day, i) => {
     const cx = MARGIN.left + slot * i + slot / 2;
     const group = svg("g", { class: "chart-day" });
-    const label = `${day.date}: ${day.filtered} filtered, ${day.unhides} unhidden`;
-    group.append(Object.assign(svg("title"), { textContent: label }));
+    group.append(Object.assign(svg("title"), { textContent: tooltip(day) }));
     // Full-slot transparent hit area so the tooltip works on empty days too.
     group.append(svg("rect", { x: cx - slot / 2, y: MARGIN.top, width: slot, height: plotH, fill: "transparent" }));
-    for (const [key, cls, offset] of [
-      ["filtered", "chart-bar-filtered", -barW - 1],
-      ["unhides", "chart-bar-unhidden", 1],
-    ]) {
+    bars.forEach(({ key, cls }, b) => {
       const h = (day[key] / max) * plotH;
-      if (h <= 0) continue;
-      group.append(
-        svg("rect", { x: cx + offset, y: y(day[key]), width: barW, height: h, rx: 2, class: cls })
-      );
-    }
+      if (h <= 0) return;
+      const x = cx - groupW / 2 + b * (barW + gap);
+      group.append(svg("rect", { x, y: y(day[key]), width: barW, height: h, rx: 2, class: cls }));
+    });
     root.append(group);
     if (i % labelEvery === 0 || i === series.length - 1) {
       root.append(

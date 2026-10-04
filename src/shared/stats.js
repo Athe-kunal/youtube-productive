@@ -45,14 +45,21 @@ export function lastNDays(stats, n, date = new Date()) {
   for (let i = n - 1; i >= 0; i--) {
     const key = dayKey(shiftDays(date, -i));
     const day = (stats && stats[key]) || {};
-    series.push({ date: key, unhides: day.unhides || 0, filtered: day.filtered || 0 });
+    series.push({
+      date: key,
+      unhides: day.unhides || 0,
+      filtered: day.filtered || 0,
+      hardcoreOffs: day.hardcoreOffs || 0,
+      hardcoreOffMinutes: day.hardcoreOffMinutes || 0,
+    });
   }
   return series;
 }
 
 export function sumSeries(series) {
-  return series.reduce(
-    (acc, d) => ({ unhides: acc.unhides + d.unhides, filtered: acc.filtered + d.filtered }),
-    { unhides: 0, filtered: 0 }
-  );
+  const totals = { unhides: 0, filtered: 0, hardcoreOffs: 0, hardcoreOffMinutes: 0 };
+  for (const d of series) {
+    for (const k of Object.keys(totals)) totals[k] += d[k] || 0;
+  }
+  return totals;
 }

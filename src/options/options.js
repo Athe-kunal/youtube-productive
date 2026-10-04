@@ -27,9 +27,6 @@ const intentCounterEl = document.getElementById("intent-counter");
 const avoidCounterEl = document.getElementById("avoid-counter");
 const hardcoreEl = document.getElementById("hardcore-mode");
 const extensionEnabledEl = document.getElementById("extension-enabled");
-const welcomeBannerEl = document.getElementById("welcome-banner");
-const welcomeStartEl = document.getElementById("welcome-start");
-const welcomeSkipEl = document.getElementById("welcome-skip");
 const profileTabsEl = document.getElementById("profile-tabs");
 const addProfileBtn = document.getElementById("add-profile-btn");
 const deleteProfileBtn = document.getElementById("delete-profile-btn");
@@ -86,15 +83,6 @@ function runTour() {
 }
 
 document.getElementById("tour-link").addEventListener("click", runTour);
-
-welcomeStartEl.addEventListener("click", () => {
-  welcomeBannerEl.hidden = true;
-  runTour();
-});
-welcomeSkipEl.addEventListener("click", () => {
-  welcomeBannerEl.hidden = true;
-  setSettings({ [STORAGE_KEYS.TOUR_SEEN]: true });
-});
 
 function currentProfile() {
   return profiles.find((p) => p.id === currentProfileId) || null;
@@ -244,11 +232,9 @@ async function load() {
   renderProfileTabs();
   loadProfileIntoForm(currentProfile());
 
-  if (!settings[STORAGE_KEYS.TOUR_SEEN]) {
-    // Show a one-line "what is this" welcome first — jumping straight into
-    // the spotlight tour on a page the user has never seen is disorienting.
-    welcomeBannerEl.hidden = false;
-  }
+  // First install opens this page (service worker onInstalled) — start the
+  // tour right away. Finishing or skipping it marks it seen, so it runs once.
+  if (!settings[STORAGE_KEYS.TOUR_SEEN]) runTour();
 }
 
 // Keyword / schedule edits are cheap: persist straight to storage
@@ -347,6 +333,27 @@ async function renderStats() {
   document.getElementById("stat-unhidden-range-label").textContent = `Unhidden (${statsRange} days)`;
   document.getElementById("stats-empty").hidden = totals.filtered + totals.unhides > 0;
   renderStatsChart(document.getElementById("stats-chart"), series);
+  renderHardcoreProgress(series, totals);
+}
+
+// Shown once hardcore is (or was) in use: when any profile has it on, or
+// there are pauses in the selected range from a profile that later turned it off.
+async function renderHardcoreProgress(series, totals) {
+  const profiles = await getProfiles();
+  const used = profiles.some((p) => p.hardcoreMode) || totals.hardcoreOffs > 0;
+  document.getElementById("hardcore-progress").hidden = !used;
+  if (!used) return;
+  document.getElementById("stat-hardcore-offs").textContent = totals.hardcoreOffs;
+  document.getElementById("stat-hardcore-minutes").textContent = totals.hardcoreOffMinutes;
+  document.getElementById("stat-hardcore-offs-label").textContent = `Times switched off (${statsRange} days)`;
+  document.getElementById("stat-hardcore-minutes-label").textContent = `Minutes off (${statsRange} days)`;
+  document.getElementById("hardcore-empty").hidden = totals.hardcoreOffs > 0;
+  renderStatsChart(document.getElementById("hardcore-chart"), series, {
+    bars: [{ key: "hardcoreOffMinutes", cls: "chart-bar-hardcore" }],
+    ariaLabel: "Minutes hardcore mode was switched off per day",
+    tooltip: (day) =>
+      `${day.date}: ${day.hardcoreOffMinutes} min off · switched off ${day.hardcoreOffs} time${day.hardcoreOffs === 1 ? "" : "s"}`,
+  });
 }
 
 for (const btn of document.querySelectorAll("#range-toggle button")) {
@@ -366,7 +373,9 @@ for (const btn of document.querySelectorAll("#range-toggle button")) {
 }
 
 chrome.storage.onChanged.addListener((changes, area) => {
-  if (area === "local" && STORAGE_KEYS.STATS in changes) renderStats();
+  if (area !== "local") return;
+  // PROFILES too: toggling hardcore mode shows/hides its progress chart.
+  if (STORAGE_KEYS.STATS in changes || STORAGE_KEYS.PROFILES in changes) renderStats();
 });
 
 renderStats();

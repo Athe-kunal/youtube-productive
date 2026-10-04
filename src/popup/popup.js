@@ -128,6 +128,9 @@ function syncScheduleRowsVisibility() {
   scheduleRowsEl.hidden = !scheduleEnabledEl.checked;
 }
 
+// Only reveals the time pickers; the choice is persisted on Apply.
+scheduleEnabledEl.addEventListener("change", syncScheduleRowsVisibility);
+
 async function renderTodayStats() {
   const stats = await getStats();
   const today = stats[dayKey()] || {};
@@ -173,8 +176,9 @@ function loadProfileIntoForm(profile) {
   renderHardcore();
 
   const active = pickActiveProfile(profiles);
-  profileHintEl.textContent =
-    active && active.id === profile.id ? "Active right now." : "Not active right now.";
+  const isActive = !!active && active.id === profile.id;
+  profileHintEl.textContent = isActive ? "Active right now" : "Not active right now";
+  profileHintEl.parentElement.classList.toggle("is-active", isActive);
 }
 
 function renderProfileOptions() {
