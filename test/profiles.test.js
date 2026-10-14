@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createProfile, pickActiveProfile } from "../src/shared/profiles.js";
+import { createProfile, pickActiveProfile, hardcoreUnlockDelaySeconds } from "../src/shared/profiles.js";
 
 function profile(overrides) {
   return { ...createProfile("P"), ...overrides };
@@ -92,4 +92,10 @@ test("pickActiveProfile: two scheduled profiles both matching -> first in list o
   const noon = new Date("2026-08-17T12:00:00");
   assert.equal(pickActiveProfile([first, second], noon), first);
   assert.equal(pickActiveProfile([second, first], noon), second);
+});
+
+test("hardcoreUnlockDelaySeconds escalates per unlock and caps at 100s", () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 10, 1000].map(hardcoreUnlockDelaySeconds), [10, 20, 40, 80, 100, 100, 100]);
+  assert.equal(hardcoreUnlockDelaySeconds(undefined), 10);
+  assert.equal(hardcoreUnlockDelaySeconds(-3), 10);
 });

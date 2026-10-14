@@ -104,14 +104,17 @@
       </section>
 
       <section id="hardcore-section" class="card card-hardcore" hidden>
-        <div class="card-heading">
-          <span class="heading-icon" aria-hidden="true">🔒</span>
-          <span>Hardcore mode</span>
-        </div>
+        <label class="switch-row card-heading">
+          <span class="heading-label">
+            <span class="heading-icon" aria-hidden="true">🔒</span>
+            <span>Hardcore mode</span>
+          </span>
+          <input type="checkbox" id="hardcore-toggle" class="switch" />
+        </label>
         <p class="hint" id="hardcore-status"></p>
-        <div class="inline-row" id="hardcore-pause-row">
+        <div class="inline-row" id="hardcore-pause-row" hidden>
           <div class="number-wrap">
-            <input type="number" id="hardcore-minutes" min="1" max="60" step="1" value="15" />
+            <input type="number" id="hardcore-minutes" min="1" max="60" step="1" value="5" />
             <span class="unit">min</span>
           </div>
           <button id="hardcore-pause" type="button" class="btn-secondary">Switch off</button>
@@ -119,6 +122,11 @@
         <button id="hardcore-resume" type="button" class="btn-secondary btn-block" hidden>
           Switch back on now
         </button>
+        <div class="unlock-countdown" id="hardcore-countdown" hidden>
+          <span class="unlock-seconds" id="hardcore-countdown-seconds"></span>
+          <span class="unlock-text" id="hardcore-countdown-text"></span>
+          <button id="hardcore-countdown-cancel" type="button" class="btn-secondary">Cancel</button>
+        </div>
         <p class="stats-line" id="hardcore-stats" role="status"></p>
       </section>
 
