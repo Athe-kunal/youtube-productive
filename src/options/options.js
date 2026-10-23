@@ -4,7 +4,7 @@ import { startTour } from "../shared/tour.js";
 import { getSettings, setSettings, getProfiles, setProfiles, updateProfileFields, deleteProfile, getStats } from "../shared/storage.js";
 import { lastNDays, sumSeries, dayKey } from "../shared/stats.js";
 import { renderStatsChart } from "./stats-chart.js";
-import { createProfile, pickActiveProfile } from "../shared/profiles.js";
+import { createProfile, pickActiveProfile, hardcoreUnlockDelaySeconds } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE, MAX_PROFILES } from "../shared/constants.js";
 
 const TOUR_STEPS = [
@@ -18,7 +18,7 @@ const TOUR_STEPS = [
   { selector: "#include-chips", text: "Always show — exact keywords that force a video to show, no matter the score." },
   { selector: "#exclude-chips", text: "Always hide — exact keywords that force a video to hide, no matter the score." },
   { selector: ".toggle-label", text: "Active hours — optionally only use this profile during set hours. Off by default." },
-  { selector: "#hardcore-row", text: "Hardcore mode — hides the filtered-videos list so nothing can be unhidden. Per profile, and only changeable here — not from the popup." },
+  { selector: "#hardcore-row", text: "Hardcore mode — hides the filtered-videos list so nothing can be unhidden. Per profile. Turning it on is instant; turning it off makes you wait, longer each time." },
 ];
 
 const intentEl = document.getElementById("intent");
@@ -26,6 +26,7 @@ const avoidEl = document.getElementById("avoid");
 const intentCounterEl = document.getElementById("intent-counter");
 const avoidCounterEl = document.getElementById("avoid-counter");
 const hardcoreEl = document.getElementById("hardcore-mode");
+let hardcoreUnlockTimer = null;
 const extensionEnabledEl = document.getElementById("extension-enabled");
 const profileTabsEl = document.getElementById("profile-tabs");
 const addProfileBtn = document.getElementById("add-profile-btn");
@@ -103,6 +104,10 @@ function loadProfileIntoForm(profile) {
   weekendEndEl.value = schedule.weekend.end;
   scheduleEnabledEl.checked = !!profile.scheduleEnabled;
   syncScheduleRowsVisibility();
+  // A pending unlock belongs to the profile it was started on.
+  clearTimeout(hardcoreUnlockTimer);
+  hardcoreUnlockTimer = null;
+  hardcoreEl.disabled = false;
   hardcoreEl.checked = !!profile.hardcoreMode;
 }
 
@@ -264,14 +269,44 @@ extensionEnabledEl.addEventListener("change", () => {
   setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
 });
 
-// Applies instantly, like the kill switch — open YouTube tabs pick it up
-// through chrome.storage.onChanged.
+// Turning hardcore on applies instantly, like the kill switch — open YouTube
+// tabs pick it up through chrome.storage.onChanged. Turning it off runs the
+// same escalating countdown as unlocking from the popup, so this page isn't
+// a way around it; leaving the page or switching profile abandons the
+// countdown.
+async function commitHardcore(profileId, on) {
+  const updated = await updateProfileFields(profileId, { hardcoreMode: on, hardcoreOffUntil: 0 });
+  profiles = profiles.map((p) => (p.id === profileId ? updated : p));
+}
+
 hardcoreEl.addEventListener("change", async () => {
   const profile = currentProfile();
   if (!profile) return;
-  const updated = await updateProfileFields(profile.id, { hardcoreMode: hardcoreEl.checked });
-  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
-  setStatus(hardcoreEl.checked ? "Hardcore mode on." : "Hardcore mode off.");
+  if (hardcoreEl.checked) {
+    await commitHardcore(profile.id, true);
+    setStatus("Hardcore mode on.");
+    return;
+  }
+  hardcoreEl.checked = true;
+  hardcoreEl.disabled = true;
+  const stats = await getStats();
+  const seconds = hardcoreUnlockDelaySeconds((stats[dayKey()] || {}).hardcoreOffs || 0);
+  const endsAt = Date.now() + seconds * 1000;
+  const tick = async () => {
+    const left = Math.ceil((endsAt - Date.now()) / 1000);
+    if (left > 0) {
+      setStatus(`Turning hardcore mode off in ${left}s — stay on this page.`);
+      hardcoreUnlockTimer = setTimeout(tick, 250);
+      return;
+    }
+    hardcoreUnlockTimer = null;
+    await commitHardcore(profile.id, false);
+    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
+    hardcoreEl.checked = false;
+    hardcoreEl.disabled = false;
+    setStatus("Hardcore mode off.");
+  };
+  tick();
 });
 
 scheduleEnabledEl.addEventListener("change", () => {

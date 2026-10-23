@@ -42,9 +42,11 @@ See [`PRIVACY.md`](PRIVACY.md) for the full policy.
   matches right now is used automatically.
 - **Scheduled profiles** — set active hours per weekday/weekend so the right profile kicks in
   without you touching the extension.
-- **Hardcore mode** — a per-profile switch in full settings (deliberately not in the popup, like
-  the master on/off switch) that hides the "Filtered on this page" list and refuses unhide requests, so filtered
-  videos stay filtered.
+- **Hardcore mode** — a per-profile switch (in the popup and full settings) that hides the
+  "Filtered on this page" list and refuses unhide requests, so filtered videos stay filtered.
+  Turning it on is instant. Unlocking — pausing it from the popup (5 min by default, 1 hour max) or
+  turning it off — first runs an Opal-style countdown that gets longer with every unlock that day:
+  10s, 20s, 40s, 80s, then capped at 100s.
 - **Progress stats** — the full settings page shows how many distracting videos were filtered and
   how many you unhid, per day, as a chart. The popup shows today's counts. Stored locally only.
 - **Runs on-device** — powered by Transformers.js and a quantized [ONNX](https://onnx.ai/) sentence embedding model, executed in an offscreen

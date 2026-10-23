@@ -2,7 +2,11 @@ import { MSG, sendToBackground } from "../shared/messaging.js";
 import { createChipInput } from "../shared/chip-input.js";
 import { getProfiles, getStats, updateProfileFields } from "../shared/storage.js";
 import { dayKey } from "../shared/stats.js";
-import { pickActiveProfile, isHardcoreActive, HARDCORE_PAUSE_MAX_MINUTES } from "../shared/profiles.js";
+import {
+  pickActiveProfile,
+  HARDCORE_PAUSE_MAX_MINUTES,
+  hardcoreUnlockDelaySeconds,
+} from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 
 const intentEl = document.getElementById("intent");
@@ -46,33 +50,83 @@ document.getElementById("full-settings-btn").addEventListener("click", () => {
 });
 
 // No master switch here — it lives only in full settings. Hardcore mode can
-// only be paused here for a bounded time (max 1 hour) and resumes by itself;
-// every pause is counted in the stats.
+// be turned on here instantly, but every unlock (a bounded pause of at most
+// 1 hour, or turning it off) first runs an Opal-style countdown that grows
+// with each unlock made today (see hardcoreUnlockDelaySeconds). Closing the
+// popup abandons the countdown. Every unlock is counted in the stats.
 const hardcoreSectionEl = document.getElementById("hardcore-section");
+const hardcoreToggleEl = document.getElementById("hardcore-toggle");
 const hardcoreStatusEl = document.getElementById("hardcore-status");
 const hardcoreMinutesEl = document.getElementById("hardcore-minutes");
 const hardcorePauseRow = document.getElementById("hardcore-pause-row");
 const hardcoreResumeBtn = document.getElementById("hardcore-resume");
+const hardcoreCountdownEl = document.getElementById("hardcore-countdown");
+const hardcoreCountdownSecondsEl = document.getElementById("hardcore-countdown-seconds");
+const hardcoreCountdownTextEl = document.getElementById("hardcore-countdown-text");
 const hardcoreStatsEl = document.getElementById("hardcore-stats");
 let hardcoreTimer = null;
+let unlocksToday = 0;
+// { profileId, endsAt, label, action, timer } while an unlock is pending.
+let unlockCountdown = null;
 
 function renderHardcore() {
   clearTimeout(hardcoreTimer);
   const profile = currentProfile();
-  hardcoreSectionEl.hidden = !(profile && profile.hardcoreMode);
-  if (hardcoreSectionEl.hidden) return;
+  hardcoreSectionEl.hidden = !profile;
+  if (!profile) return;
+  const on = !!profile.hardcoreMode;
   const left = (profile.hardcoreOffUntil || 0) - Date.now();
-  const paused = left > 0;
-  hardcorePauseRow.hidden = paused;
-  hardcoreResumeBtn.hidden = !paused;
-  if (paused) {
+  const paused = on && left > 0;
+  const counting = !!unlockCountdown;
+  hardcoreToggleEl.checked = on;
+  hardcoreToggleEl.disabled = counting;
+  hardcoreCountdownEl.hidden = !counting;
+  hardcorePauseRow.hidden = !on || paused || counting;
+  hardcoreResumeBtn.hidden = !paused || counting;
+  if (!on) {
+    hardcoreStatusEl.textContent = "Off — turn on to keep filtered videos locked away.";
+  } else if (paused) {
     const mins = Math.ceil(left / 60000);
     hardcoreStatusEl.textContent = `Off for ${mins} more min — back on automatically.`;
     hardcoreTimer = setTimeout(renderHardcore, Math.min(left, 15000) + 50);
   } else {
-    hardcoreStatusEl.textContent = "On — filtered videos can't be unhidden.";
+    const wait = hardcoreUnlockDelaySeconds(unlocksToday);
+    hardcoreStatusEl.textContent = `On — filtered videos can't be unhidden. Next unlock takes a ${wait}s wait.`;
   }
 }
+
+function startUnlockCountdown(label, action) {
+  const profile = currentProfile();
+  if (!profile || unlockCountdown) return;
+  const seconds = hardcoreUnlockDelaySeconds(unlocksToday);
+  unlockCountdown = { profileId: profile.id, endsAt: Date.now() + seconds * 1000, label, action, timer: null };
+  renderHardcore();
+  tickUnlockCountdown();
+}
+
+function tickUnlockCountdown() {
+  if (!unlockCountdown) return;
+  const left = Math.ceil((unlockCountdown.endsAt - Date.now()) / 1000);
+  if (left <= 0) {
+    const { profileId, action } = unlockCountdown;
+    unlockCountdown = null;
+    renderHardcore();
+    action(profileId);
+    return;
+  }
+  hardcoreCountdownSecondsEl.textContent = `${left}s`;
+  hardcoreCountdownTextEl.textContent = `${unlockCountdown.label} — keep this open.`;
+  unlockCountdown.timer = setTimeout(tickUnlockCountdown, 250);
+}
+
+function cancelUnlockCountdown() {
+  if (!unlockCountdown) return;
+  clearTimeout(unlockCountdown.timer);
+  unlockCountdown = null;
+  renderHardcore();
+}
+
+document.getElementById("hardcore-countdown-cancel").addEventListener("click", cancelUnlockCountdown);
 
 async function renderHardcoreStats() {
   const stats = await getStats();
@@ -82,39 +136,60 @@ async function renderHardcoreStats() {
     offs += day.hardcoreOffs || 0;
     minutes += day.hardcoreOffMinutes || 0;
   }
+  unlocksToday = (stats[dayKey()] || {}).hardcoreOffs || 0;
   hardcoreStatsEl.textContent = `Switched off ${offs} time${offs === 1 ? "" : "s"} · ${minutes} min total`;
+  if (!unlockCountdown) renderHardcore();
 }
 
-async function setHardcorePause(minutes) {
-  const profile = currentProfile();
-  if (!profile) return;
-  const updated = await updateProfileFields(profile.id, {
-    hardcoreOffUntil: minutes > 0 ? Date.now() + minutes * 60000 : 0,
-  });
-  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
+async function updateHardcore(profileId, fields) {
+  const updated = await updateProfileFields(profileId, fields);
+  profiles = profiles.map((p) => (p.id === profileId ? updated : p));
   renderHardcore();
 }
 
-document.getElementById("hardcore-pause").addEventListener("click", async () => {
+// Ending a pause early (or turning hardcore off mid-pause): refund the
+// unused minutes so the tally reflects time actually spent with it off.
+function refundUnusedPause(profile) {
+  const unused = Math.floor(((profile && profile.hardcoreOffUntil) - Date.now()) / 60000);
+  if (unused > 0) {
+    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: -unused }).catch(() => {});
+  }
+}
+
+hardcoreToggleEl.addEventListener("change", () => {
+  const profile = currentProfile();
+  if (!profile) return;
+  if (hardcoreToggleEl.checked) {
+    // Locking is always instant — only unlocking has friction.
+    updateHardcore(profile.id, { hardcoreMode: true, hardcoreOffUntil: 0 });
+    return;
+  }
+  hardcoreToggleEl.checked = true;
+  startUnlockCountdown("Turning off hardcore mode", async (profileId) => {
+    refundUnusedPause(profiles.find((p) => p.id === profileId));
+    await updateHardcore(profileId, { hardcoreMode: false, hardcoreOffUntil: 0 });
+    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
+  });
+});
+
+document.getElementById("hardcore-pause").addEventListener("click", () => {
   const minutes = Math.min(
     HARDCORE_PAUSE_MAX_MINUTES,
     Math.max(1, Math.round(Number(hardcoreMinutesEl.value) || 0))
   );
   hardcoreMinutesEl.value = minutes;
-  await setHardcorePause(minutes);
-  sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
-  sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: minutes }).catch(() => {});
+  startUnlockCountdown(`Switching off for ${minutes} min`, async (profileId) => {
+    await updateHardcore(profileId, { hardcoreOffUntil: Date.now() + minutes * 60000 });
+    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
+    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: minutes }).catch(() => {});
+  });
 });
 
 hardcoreResumeBtn.addEventListener("click", async () => {
-  // Ending early: refund the unused minutes so the tally reflects time
-  // actually spent with hardcore off.
   const profile = currentProfile();
-  const unused = Math.floor(((profile && profile.hardcoreOffUntil) - Date.now()) / 60000);
-  await setHardcorePause(0);
-  if (unused > 0) {
-    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: -unused }).catch(() => {});
-  }
+  if (!profile) return;
+  refundUnusedPause(profile);
+  await updateHardcore(profile.id, { hardcoreOffUntil: 0 });
 });
 
 function readSchedule() {
@@ -194,6 +269,7 @@ function renderProfileOptions() {
 }
 
 profileSelectEl.addEventListener("change", () => {
+  cancelUnlockCountdown();
   currentProfileId = profileSelectEl.value;
   const profile = currentProfile();
   if (profile) loadProfileIntoForm(profile);
