@@ -3,7 +3,7 @@
 // background service worker (RECORD_STAT), which is the single writer.
 export const STATS_RETENTION_DAYS = 90;
 
-const KINDS = ["unhides", "filtered", "hardcoreOffs", "hardcoreOffMinutes"];
+const KINDS = ["unhides", "filtered", "hardcoreOffs", "hardcoreOffMinutes", "hardcoreReveals"];
 
 function pad(n) {
   return String(n).padStart(2, "0");

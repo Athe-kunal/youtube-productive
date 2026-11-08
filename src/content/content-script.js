@@ -2,7 +2,7 @@ import { MSG, sendToBackground } from "../shared/messaging.js";
 import { resolveDecision } from "../shared/keyword-filter.js";
 import { calibratedCutoff } from "../shared/scoring.js";
 import { getSettings, getProfiles, getScoreCache, setScoreCache } from "../shared/storage.js";
-import { pickActiveProfile, isHardcoreActive } from "../shared/profiles.js";
+import { pickActiveProfile, isHardcoreActive, HARDCORE_REVEAL_WINDOW_SECONDS } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEBOUNCE_MS, CACHE_FLUSH_DEBOUNCE_MS, MAX_SCORE_ATTEMPTS, DEFAULT_SENSITIVITY_K, SCHEDULE_RECHECK_MS } from "../shared/constants.js";
 import { ADAPTIVE_SCORE_CHUNK_SIZE, EXTRACT_YIELD_EVERY, yieldToMain } from "../shared/device.js";
 import { getPageConfig } from "./selectors.js";
@@ -35,6 +35,18 @@ const manualShows = new Set();
 // so there's no path (popup or otherwise) to reveal a filtered card.
 function isHardcore() {
   return isHardcoreActive(activeProfile);
+}
+
+// After the popup's breathing session, hidden videos can be listed and
+// unhidden until this time (epoch ms). In-memory and per tab on purpose.
+let revealUntil = 0;
+let revealTimer = null;
+function isRevealing() {
+  return revealUntil > Date.now();
+}
+// Hardcore is on and no reveal window is open: the list stays withheld.
+function isLocked() {
+  return isHardcore() && !isRevealing();
 }
 
 // A popup pause ends on its own: re-apply the filter the moment it expires.
@@ -602,7 +614,10 @@ chrome.storage.onChanged.addListener((changes, area) => {
       // Turning hardcore on discards any earlier "show anyway" clicks so
       // those cards go back under the filter; either way the popup's
       // filtered list needs to re-fetch (it's empty or full now).
-      if (isHardcore()) manualShows.clear();
+      if (isHardcore()) {
+        manualShows.clear();
+        revealUntil = 0;
+      }
       scheduleFilterStateBroadcast();
     }
     if (activeChanged) {
@@ -632,11 +647,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message && message.type === MSG.GET_FILTERED_VIDEOS) {
-    if (isHardcore()) {
+    if (isLocked()) {
       sendResponse({
         ok: true,
         isSupportedPage: !!pageConfig,
         hardcore: true,
+        locked: true,
         dimmed: [],
         activeProfile: { id: activeProfile.id, name: activeProfile.name },
       });
@@ -684,15 +700,27 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     sendResponse({
       ok: true,
       isSupportedPage: !!pageConfig,
-      hardcore: false,
+      hardcore: isHardcore(),
+      locked: false,
+      revealUntil: isHardcore() ? revealUntil : 0,
       dimmed,
       activeProfile: activeProfile && { id: activeProfile.id, name: activeProfile.name },
     });
     return true;
   }
 
-  if (message && message.type === MSG.UNHIDE_VIDEO) {
+  if (message && message.type === MSG.REVEAL_HARDCORE) {
     if (isHardcore()) {
+      revealUntil = Date.now() + HARDCORE_REVEAL_WINDOW_SECONDS * 1000;
+      clearTimeout(revealTimer);
+      revealTimer = setTimeout(scheduleFilterStateBroadcast, HARDCORE_REVEAL_WINDOW_SECONDS * 1000 + 100);
+    }
+    sendResponse({ ok: true, revealUntil });
+    return true;
+  }
+
+  if (message && message.type === MSG.UNHIDE_VIDEO) {
+    if (isLocked()) {
       sendResponse({ ok: false, hardcore: true });
       return true;
     }

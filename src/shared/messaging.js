@@ -24,6 +24,11 @@ export const MSG = {
   GET_FILTERED_VIDEOS: "GET_FILTERED_VIDEOS",
   UNHIDE_VIDEO: "UNHIDE_VIDEO",
 
+  // Popup -> content script, sent once the hardcore breathing session is
+  // done. The content script (not the popup) decides how long the resulting
+  // reveal window lasts, so the popup can't extend it.
+  REVEAL_HARDCORE: "REVEAL_HARDCORE",
+
   // Broadcast by the content script whenever a card's show/dim decision
   // changes (new scoring pass, keyword/schedule reapply, extension
   // toggled). The popup's "Filtered on this page" list is a snapshot taken

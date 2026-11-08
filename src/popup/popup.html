@@ -112,22 +112,15 @@
           <input type="checkbox" id="hardcore-toggle" class="switch" />
         </label>
         <p class="hint" id="hardcore-status"></p>
-        <div class="inline-row" id="hardcore-pause-row" hidden>
-          <div class="number-wrap">
-            <input type="number" id="hardcore-minutes" min="1" max="60" step="1" value="5" />
-            <span class="unit">min</span>
+        <div id="breathe" class="breathe" hidden>
+          <div class="orb-stage" aria-hidden="true">
+            <div class="orb-glow"></div>
+            <div class="orb"></div>
           </div>
-          <button id="hardcore-pause" type="button" class="btn-secondary">Switch off</button>
+          <p class="breathe-phase" id="breathe-phase" role="status" aria-live="polite"></p>
+          <p class="breathe-time" id="breathe-time"></p>
+          <button id="breathe-cancel" type="button" class="btn-secondary">Cancel</button>
         </div>
-        <button id="hardcore-resume" type="button" class="btn-secondary btn-block" hidden>
-          Switch back on now
-        </button>
-        <div class="unlock-countdown" id="hardcore-countdown" hidden>
-          <span class="unlock-seconds" id="hardcore-countdown-seconds"></span>
-          <span class="unlock-text" id="hardcore-countdown-text"></span>
-          <button id="hardcore-countdown-cancel" type="button" class="btn-secondary">Cancel</button>
-        </div>
-        <p class="stats-line" id="hardcore-stats" role="status"></p>
       </section>
 
       <section id="filtered-section" class="card">
@@ -137,6 +130,9 @@
         </div>
         <p class="stats-line" id="today-stats" role="status"></p>
         <p id="empty-state" class="muted">Loading…</p>
+        <div id="reveal-gate" hidden>
+          <button id="reveal-btn" type="button" class="btn-secondary btn-block">Show hidden videos</button>
+        </div>
         <ul id="list"></ul>
       </section>
     </div>

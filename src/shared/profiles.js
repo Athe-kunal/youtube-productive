@@ -46,6 +46,19 @@ export function hardcoreUnlockDelaySeconds(unlocksToday = 0) {
   return Math.min(HARDCORE_UNLOCK_MAX_SECONDS, HARDCORE_UNLOCK_BASE_SECONDS * 2 ** n);
 }
 
+// The breathing session that gates unlocking hardcore and viewing its hidden
+// videos doubles with each one completed today: 10s, 20s, 40s, 80s, 160s,
+// then capped at 5 minutes. The cap is never shown in the UI.
+export const HARDCORE_BREATHE_BASE_SECONDS = 10;
+export const HARDCORE_BREATHE_MAX_SECONDS = 300;
+export const HARDCORE_REVEAL_WINDOW_SECONDS = 300;
+
+export function hardcoreRevealDelaySeconds(doneToday = 0) {
+  const n = Math.max(0, Math.floor(Number(doneToday) || 0));
+  if (n >= 5) return HARDCORE_BREATHE_MAX_SECONDS;
+  return Math.min(HARDCORE_BREATHE_MAX_SECONDS, HARDCORE_BREATHE_BASE_SECONDS * 2 ** n);
+}
+
 export function isHardcoreActive(profile, now = Date.now()) {
   return !!(profile && profile.hardcoreMode && !(profile.hardcoreOffUntil > now));
 }

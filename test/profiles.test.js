@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { createProfile, pickActiveProfile, hardcoreUnlockDelaySeconds } from "../src/shared/profiles.js";
+import { createProfile, pickActiveProfile, hardcoreUnlockDelaySeconds, hardcoreRevealDelaySeconds } from "../src/shared/profiles.js";
 
 function profile(overrides) {
   return { ...createProfile("P"), ...overrides };
@@ -98,4 +98,10 @@ test("hardcoreUnlockDelaySeconds escalates per unlock and caps at 100s", () => {
   assert.deepEqual([0, 1, 2, 3, 4, 10, 1000].map(hardcoreUnlockDelaySeconds), [10, 20, 40, 80, 100, 100, 100]);
   assert.equal(hardcoreUnlockDelaySeconds(undefined), 10);
   assert.equal(hardcoreUnlockDelaySeconds(-3), 10);
+});
+
+test("hardcoreRevealDelaySeconds doubles from 10s and caps at 5 minutes", () => {
+  assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 100].map(hardcoreRevealDelaySeconds), [10, 20, 40, 80, 160, 300, 300, 300]);
+  assert.equal(hardcoreRevealDelaySeconds(undefined), 10);
+  assert.equal(hardcoreRevealDelaySeconds(-2), 10);
 });

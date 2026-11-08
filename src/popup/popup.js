@@ -4,8 +4,7 @@ import { getProfiles, getStats, updateProfileFields } from "../shared/storage.js
 import { dayKey } from "../shared/stats.js";
 import {
   pickActiveProfile,
-  HARDCORE_PAUSE_MAX_MINUTES,
-  hardcoreUnlockDelaySeconds,
+  hardcoreRevealDelaySeconds,
 } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 
@@ -49,96 +48,103 @@ document.getElementById("full-settings-btn").addEventListener("click", () => {
   chrome.runtime.openOptionsPage();
 });
 
-// No master switch here — it lives only in full settings. Hardcore mode can
-// be turned on here instantly, but every unlock (a bounded pause of at most
-// 1 hour, or turning it off) first runs an Opal-style countdown that grows
-// with each unlock made today (see hardcoreUnlockDelaySeconds). Closing the
-// popup abandons the countdown. Every unlock is counted in the stats.
+// Hardcore mode can only be turned ON from here. Turning it off (or
+// pausing it) happens in full settings, so there is no way around it from
+// the popup. The only friction here is the breathing session that gates
+// viewing the hidden videos.
 const hardcoreSectionEl = document.getElementById("hardcore-section");
 const hardcoreToggleEl = document.getElementById("hardcore-toggle");
 const hardcoreStatusEl = document.getElementById("hardcore-status");
-const hardcoreMinutesEl = document.getElementById("hardcore-minutes");
-const hardcorePauseRow = document.getElementById("hardcore-pause-row");
-const hardcoreResumeBtn = document.getElementById("hardcore-resume");
-const hardcoreCountdownEl = document.getElementById("hardcore-countdown");
-const hardcoreCountdownSecondsEl = document.getElementById("hardcore-countdown-seconds");
-const hardcoreCountdownTextEl = document.getElementById("hardcore-countdown-text");
-const hardcoreStatsEl = document.getElementById("hardcore-stats");
 let hardcoreTimer = null;
-let unlocksToday = 0;
-// { profileId, endsAt, label, action, timer } while an unlock is pending.
-let unlockCountdown = null;
+let revealsToday = 0;
 
 function renderHardcore() {
   clearTimeout(hardcoreTimer);
   const profile = currentProfile();
   hardcoreSectionEl.hidden = !profile;
   if (!profile) return;
-  const on = !!profile.hardcoreMode;
+  // A pause set earlier in full settings or by an older version counts as off.
   const left = (profile.hardcoreOffUntil || 0) - Date.now();
-  const paused = on && left > 0;
-  const counting = !!unlockCountdown;
+  const paused = !!profile.hardcoreMode && left > 0;
+  const on = !!profile.hardcoreMode && !paused;
+  // While on there is no switch at all, so nothing suggests it can be turned
+  // off here; it only appears when hardcore is off, to turn it on.
   hardcoreToggleEl.checked = on;
-  hardcoreToggleEl.disabled = counting;
-  hardcoreCountdownEl.hidden = !counting;
-  hardcorePauseRow.hidden = !on || paused || counting;
-  hardcoreResumeBtn.hidden = !paused || counting;
-  if (!on) {
-    hardcoreStatusEl.textContent = "Off — turn on to keep filtered videos locked away.";
-  } else if (paused) {
-    const mins = Math.ceil(left / 60000);
-    hardcoreStatusEl.textContent = `Off for ${mins} more min — back on automatically.`;
-    hardcoreTimer = setTimeout(renderHardcore, Math.min(left, 15000) + 50);
-  } else {
-    const wait = hardcoreUnlockDelaySeconds(unlocksToday);
-    hardcoreStatusEl.textContent = `On — filtered videos can't be unhidden. Next unlock takes a ${wait}s wait.`;
-  }
+  hardcoreToggleEl.hidden = on;
+  hardcoreStatusEl.textContent = on ? "Hardcore mode is on." : "Off";
+  if (paused) hardcoreTimer = setTimeout(renderHardcore, Math.min(left, 15000) + 50);
 }
 
-function startUnlockCountdown(label, action) {
-  const profile = currentProfile();
-  if (!profile || unlockCountdown) return;
-  const seconds = hardcoreUnlockDelaySeconds(unlocksToday);
-  unlockCountdown = { profileId: profile.id, endsAt: Date.now() + seconds * 1000, label, action, timer: null };
+// ---- Breathing gate (Opal-style) ----
+// Viewing the videos hardcore mode hid starts a guided breathing session. Its length doubles with each one
+// completed today (see hardcoreRevealDelaySeconds) and is never shown —
+// only the orb and "Breathe in" / "Breathe out". Cancelling or closing the
+// popup abandons it without counting.
+const BREATHE_IN_MS = 4000;
+const BREATHE_CYCLE_MS = 10000; // 4s in + 6s out; matches the CSS animation
+const breatheEl = document.getElementById("breathe");
+const breathePhaseEl = document.getElementById("breathe-phase");
+const breatheTimeEl = document.getElementById("breathe-time");
+
+function formatClock(seconds) {
+  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+// { endsAt, startedAt, onDone, timer } while a session runs.
+let breathe = null;
+
+function startBreathe(host, beforeNode, onDone) {
+  if (breathe) return;
+  const seconds = hardcoreRevealDelaySeconds(revealsToday);
+  const now = Date.now();
+  breathe = { startedAt: now, endsAt: now + seconds * 1000, onDone, timer: null };
+  // Shown in place — inside whichever card started it — not at the top.
+  host.insertBefore(breatheEl, beforeNode);
+  breatheEl.hidden = false;
+  breatheEl.classList.add("is-running");
+  breatheEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
   renderHardcore();
-  tickUnlockCountdown();
+  loadFiltered();
+  tickBreathe();
 }
 
-function tickUnlockCountdown() {
-  if (!unlockCountdown) return;
-  const left = Math.ceil((unlockCountdown.endsAt - Date.now()) / 1000);
-  if (left <= 0) {
-    const { profileId, action } = unlockCountdown;
-    unlockCountdown = null;
-    renderHardcore();
-    action(profileId);
+function tickBreathe() {
+  if (!breathe) return;
+  const now = Date.now();
+  if (now >= breathe.endsAt) {
+    const { onDone } = breathe;
+    stopBreathe();
+    onDone();
     return;
   }
-  hardcoreCountdownSecondsEl.textContent = `${left}s`;
-  hardcoreCountdownTextEl.textContent = `${unlockCountdown.label} — keep this open.`;
-  unlockCountdown.timer = setTimeout(tickUnlockCountdown, 250);
+  const inhaling = (now - breathe.startedAt) % BREATHE_CYCLE_MS < BREATHE_IN_MS;
+  breatheTimeEl.textContent = formatClock(Math.ceil((breathe.endsAt - now) / 1000));
+  breathePhaseEl.textContent = inhaling ? "Breathe in" : "Breathe out";
+  breatheEl.classList.toggle("is-in", inhaling);
+  breatheEl.classList.toggle("is-out", !inhaling);
+  breathe.timer = setTimeout(tickBreathe, 250);
 }
 
-function cancelUnlockCountdown() {
-  if (!unlockCountdown) return;
-  clearTimeout(unlockCountdown.timer);
-  unlockCountdown = null;
+function stopBreathe() {
+  if (!breathe) return;
+  clearTimeout(breathe.timer);
+  breathe = null;
+  breatheEl.hidden = true;
+  breatheEl.classList.remove("is-running", "is-in", "is-out");
   renderHardcore();
 }
 
-document.getElementById("hardcore-countdown-cancel").addEventListener("click", cancelUnlockCountdown);
+function cancelBreathe() {
+  if (!breathe) return;
+  stopBreathe();
+  loadFiltered();
+}
+
+document.getElementById("breathe-cancel").addEventListener("click", cancelBreathe);
 
 async function renderHardcoreStats() {
   const stats = await getStats();
-  let offs = 0;
-  let minutes = 0;
-  for (const day of Object.values(stats)) {
-    offs += day.hardcoreOffs || 0;
-    minutes += day.hardcoreOffMinutes || 0;
-  }
-  unlocksToday = (stats[dayKey()] || {}).hardcoreOffs || 0;
-  hardcoreStatsEl.textContent = `Switched off ${offs} time${offs === 1 ? "" : "s"} · ${minutes} min total`;
-  if (!unlockCountdown) renderHardcore();
+  revealsToday = (stats[dayKey()] || {}).hardcoreReveals || 0;
+  if (!breathe) renderHardcore();
 }
 
 async function updateHardcore(profileId, fields) {
@@ -147,49 +153,10 @@ async function updateHardcore(profileId, fields) {
   renderHardcore();
 }
 
-// Ending a pause early (or turning hardcore off mid-pause): refund the
-// unused minutes so the tally reflects time actually spent with it off.
-function refundUnusedPause(profile) {
-  const unused = Math.floor(((profile && profile.hardcoreOffUntil) - Date.now()) / 60000);
-  if (unused > 0) {
-    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: -unused }).catch(() => {});
-  }
-}
-
 hardcoreToggleEl.addEventListener("change", () => {
   const profile = currentProfile();
-  if (!profile) return;
-  if (hardcoreToggleEl.checked) {
-    // Locking is always instant — only unlocking has friction.
-    updateHardcore(profile.id, { hardcoreMode: true, hardcoreOffUntil: 0 });
-    return;
-  }
-  hardcoreToggleEl.checked = true;
-  startUnlockCountdown("Turning off hardcore mode", async (profileId) => {
-    refundUnusedPause(profiles.find((p) => p.id === profileId));
-    await updateHardcore(profileId, { hardcoreMode: false, hardcoreOffUntil: 0 });
-    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
-  });
-});
-
-document.getElementById("hardcore-pause").addEventListener("click", () => {
-  const minutes = Math.min(
-    HARDCORE_PAUSE_MAX_MINUTES,
-    Math.max(1, Math.round(Number(hardcoreMinutesEl.value) || 0))
-  );
-  hardcoreMinutesEl.value = minutes;
-  startUnlockCountdown(`Switching off for ${minutes} min`, async (profileId) => {
-    await updateHardcore(profileId, { hardcoreOffUntil: Date.now() + minutes * 60000 });
-    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
-    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffMinutes", count: minutes }).catch(() => {});
-  });
-});
-
-hardcoreResumeBtn.addEventListener("click", async () => {
-  const profile = currentProfile();
-  if (!profile) return;
-  refundUnusedPause(profile);
-  await updateHardcore(profile.id, { hardcoreOffUntil: 0 });
+  if (!profile || !hardcoreToggleEl.checked) return;
+  updateHardcore(profile.id, { hardcoreMode: true, hardcoreOffUntil: 0 });
 });
 
 function readSchedule() {
@@ -269,7 +236,7 @@ function renderProfileOptions() {
 }
 
 profileSelectEl.addEventListener("change", () => {
-  cancelUnlockCountdown();
+  cancelBreathe();
   currentProfileId = profileSelectEl.value;
   const profile = currentProfile();
   if (profile) loadProfileIntoForm(profile);
@@ -336,6 +303,34 @@ chrome.runtime.onMessage.addListener((message, sender) => {
     if (!currentTabId || !sender.tab || sender.tab.id === currentTabId) loadFiltered();
   }
 });
+
+// ---- Reveal gate: hidden videos behind a breathing session ----
+const filteredSectionEl = document.getElementById("filtered-section");
+const revealGateEl = document.getElementById("reveal-gate");
+const revealBtnEl = document.getElementById("reveal-btn");
+function startReveal() {
+  const tabId = currentTabId;
+  if (!tabId) return;
+  startBreathe(filteredSectionEl, listEl, async () => {
+    try {
+      const response = await chrome.tabs.sendMessage(tabId, { type: MSG.REVEAL_HARDCORE });
+      if (response && response.ok) {
+        sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreReveals", count: 1 }).catch(() => {});
+      }
+    } catch {
+      // Tab went away; loadFiltered below explains what to do.
+    }
+    await loadFiltered();
+  });
+}
+
+function showLockedGate() {
+  listEl.innerHTML = "";
+  emptyState.style.display = "none";
+  revealGateEl.hidden = !!breathe;
+}
+
+revealBtnEl.addEventListener("click", startReveal);
 
 function renderFiltered(dimmed) {
   listEl.innerHTML = "";
@@ -423,12 +418,13 @@ async function loadFiltered() {
     return;
   }
 
-  if (response.hardcore) {
-    listEl.innerHTML = "";
-    emptyState.style.display = "";
-    emptyState.textContent = "Hardcore mode is on — filtered videos stay hidden.";
+  // `locked` is undefined from a content script injected before the reveal
+  // gate existed (YouTube tab not reloaded yet): fall back to `hardcore`.
+  if (response.locked || (response.hardcore && response.locked === undefined)) {
+    showLockedGate();
     return;
   }
+  revealGateEl.hidden = true;
 
   if (response.dimmed.length === 0) {
     listEl.innerHTML = "";

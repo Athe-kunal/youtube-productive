@@ -4,7 +4,7 @@ import { startTour } from "../shared/tour.js";
 import { getSettings, setSettings, getProfiles, setProfiles, updateProfileFields, deleteProfile, getStats } from "../shared/storage.js";
 import { lastNDays, sumSeries, dayKey } from "../shared/stats.js";
 import { renderStatsChart } from "./stats-chart.js";
-import { createProfile, pickActiveProfile, hardcoreUnlockDelaySeconds } from "../shared/profiles.js";
+import { createProfile, pickActiveProfile } from "../shared/profiles.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE, MAX_PROFILES } from "../shared/constants.js";
 
 const TOUR_STEPS = [
@@ -18,7 +18,7 @@ const TOUR_STEPS = [
   { selector: "#include-chips", text: "Always show — exact keywords that force a video to show, no matter the score." },
   { selector: "#exclude-chips", text: "Always hide — exact keywords that force a video to hide, no matter the score." },
   { selector: ".toggle-label", text: "Active hours — optionally only use this profile during set hours. Off by default." },
-  { selector: "#hardcore-row", text: "Hardcore mode — hides the filtered-videos list so nothing can be unhidden. Per profile. Turning it on is instant; turning it off makes you wait, longer each time." },
+  { selector: "#hardcore-row", text: "Hardcore mode — hides the filtered-videos list so nothing can be unhidden. Per profile." },
 ];
 
 const intentEl = document.getElementById("intent");
@@ -26,7 +26,6 @@ const avoidEl = document.getElementById("avoid");
 const intentCounterEl = document.getElementById("intent-counter");
 const avoidCounterEl = document.getElementById("avoid-counter");
 const hardcoreEl = document.getElementById("hardcore-mode");
-let hardcoreUnlockTimer = null;
 const extensionEnabledEl = document.getElementById("extension-enabled");
 const profileTabsEl = document.getElementById("profile-tabs");
 const addProfileBtn = document.getElementById("add-profile-btn");
@@ -104,10 +103,6 @@ function loadProfileIntoForm(profile) {
   weekendEndEl.value = schedule.weekend.end;
   scheduleEnabledEl.checked = !!profile.scheduleEnabled;
   syncScheduleRowsVisibility();
-  // A pending unlock belongs to the profile it was started on.
-  clearTimeout(hardcoreUnlockTimer);
-  hardcoreUnlockTimer = null;
-  hardcoreEl.disabled = false;
   hardcoreEl.checked = !!profile.hardcoreMode;
 }
 
@@ -269,44 +264,16 @@ extensionEnabledEl.addEventListener("change", () => {
   setSettings({ [STORAGE_KEYS.EXTENSION_ENABLED]: extensionEnabledEl.checked });
 });
 
-// Turning hardcore on applies instantly, like the kill switch — open YouTube
-// tabs pick it up through chrome.storage.onChanged. Turning it off runs the
-// same escalating countdown as unlocking from the popup, so this page isn't
-// a way around it; leaving the page or switching profile abandons the
-// countdown.
-async function commitHardcore(profileId, on) {
-  const updated = await updateProfileFields(profileId, { hardcoreMode: on, hardcoreOffUntil: 0 });
-  profiles = profiles.map((p) => (p.id === profileId ? updated : p));
-}
-
+// Setting up a profile: hardcore switches on and off instantly here. The
+// breathing friction only applies in the popup. Open YouTube tabs pick the
+// change up through chrome.storage.onChanged.
 hardcoreEl.addEventListener("change", async () => {
   const profile = currentProfile();
   if (!profile) return;
-  if (hardcoreEl.checked) {
-    await commitHardcore(profile.id, true);
-    setStatus("Hardcore mode on.");
-    return;
-  }
-  hardcoreEl.checked = true;
-  hardcoreEl.disabled = true;
-  const stats = await getStats();
-  const seconds = hardcoreUnlockDelaySeconds((stats[dayKey()] || {}).hardcoreOffs || 0);
-  const endsAt = Date.now() + seconds * 1000;
-  const tick = async () => {
-    const left = Math.ceil((endsAt - Date.now()) / 1000);
-    if (left > 0) {
-      setStatus(`Turning hardcore mode off in ${left}s — stay on this page.`);
-      hardcoreUnlockTimer = setTimeout(tick, 250);
-      return;
-    }
-    hardcoreUnlockTimer = null;
-    await commitHardcore(profile.id, false);
-    sendToBackground(MSG.RECORD_STAT, { kind: "hardcoreOffs", count: 1 }).catch(() => {});
-    hardcoreEl.checked = false;
-    hardcoreEl.disabled = false;
-    setStatus("Hardcore mode off.");
-  };
-  tick();
+  const on = hardcoreEl.checked;
+  const updated = await updateProfileFields(profile.id, { hardcoreMode: on, hardcoreOffUntil: 0 });
+  profiles = profiles.map((p) => (p.id === profile.id ? updated : p));
+  setStatus(on ? "Hardcore mode on." : "Hardcore mode off.");
 });
 
 scheduleEnabledEl.addEventListener("change", () => {
@@ -371,11 +338,11 @@ async function renderStats() {
   renderHardcoreProgress(series, totals);
 }
 
-// Shown once hardcore is (or was) in use: when any profile has it on, or
-// there are pauses in the selected range from a profile that later turned it off.
-async function renderHardcoreProgress(series, totals) {
-  const profiles = await getProfiles();
-  const used = profiles.some((p) => p.hardcoreMode) || totals.hardcoreOffs > 0;
+// Only shown when there is pause history in the selected range. It must not
+// depend on a profile's hardcore toggle: that card sits above the settings,
+// so showing/hiding it when the toggle flips shifts the whole page.
+function renderHardcoreProgress(series, totals) {
+  const used = totals.hardcoreOffs > 0;
   document.getElementById("hardcore-progress").hidden = !used;
   if (!used) return;
   document.getElementById("stat-hardcore-offs").textContent = totals.hardcoreOffs;
@@ -409,8 +376,7 @@ for (const btn of document.querySelectorAll("#range-toggle button")) {
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== "local") return;
-  // PROFILES too: toggling hardcore mode shows/hides its progress chart.
-  if (STORAGE_KEYS.STATS in changes || STORAGE_KEYS.PROFILES in changes) renderStats();
+  if (STORAGE_KEYS.STATS in changes) renderStats();
 });
 
 renderStats();

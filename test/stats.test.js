@@ -83,3 +83,10 @@ test("recordStat tracks hardcore pauses and refunds unused minutes", () => {
   assert.deepEqual(s["2026-09-26"], { unhides: 0, filtered: 0, hardcoreOffs: 1, hardcoreOffMinutes: 20 });
   assert.deepEqual(recordStat({}, "unhides", d, -1), {});
 });
+
+test("recordStat counts hardcoreReveals per day", () => {
+  const d = new Date(2026, 10, 8);
+  const once = recordStat({}, "hardcoreReveals", d);
+  const twice = recordStat(once, "hardcoreReveals", d);
+  assert.equal(twice["2026-11-08"].hardcoreReveals, 2);
+});
