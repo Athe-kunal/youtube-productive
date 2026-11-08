@@ -32,6 +32,19 @@ export function createProfile(name) {
 }
 
 export const HARDCORE_PAUSE_MAX_MINUTES = 60;
+export const HARDCORE_PAUSE_DEFAULT_MINUTES = 5;
+
+// Opal-style friction: every unlock (pausing hardcore or turning it off)
+// first makes you sit through a countdown that doubles with each unlock
+// already made today — 10s, 20s, 40s, 80s, then capped at 100s.
+export const HARDCORE_UNLOCK_BASE_SECONDS = 10;
+export const HARDCORE_UNLOCK_MAX_SECONDS = 100;
+
+export function hardcoreUnlockDelaySeconds(unlocksToday = 0) {
+  const n = Math.max(0, Math.floor(Number(unlocksToday) || 0));
+  if (n >= 4) return HARDCORE_UNLOCK_MAX_SECONDS;
+  return Math.min(HARDCORE_UNLOCK_MAX_SECONDS, HARDCORE_UNLOCK_BASE_SECONDS * 2 ** n);
+}
 
 export function isHardcoreActive(profile, now = Date.now()) {
   return !!(profile && profile.hardcoreMode && !(profile.hardcoreOffUntil > now));
