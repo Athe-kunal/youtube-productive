@@ -2,8 +2,8 @@
 
 **Curate your YouTube feed by what you actually came to watch — entirely on-device.**
 
-Tell it what you're here for ("AI research, systems, distributed training — no football, no
-drama") and it embeds that intent locally, scores every video card as it renders, and dims
+Tell it what you're here for ("cooking tutorials, home workouts, history documentaries — no
+gossip, no reaction videos") and it embeds that intent locally, scores every video card as it renders, and dims
 anything that doesn't match. No API calls, no account, no subscription. The model runs in your
 browser via Transformers.js (the `@xenova/transformers` npm package) — your feed, your
 intent, and your viewing habits never leave your device.
@@ -16,8 +16,8 @@ Most "productivity" extensions for YouTube either hide entire sections (Shorts, 
 sledgehammer, or ship a keyword blocklist you have to maintain by hand. Neither understands what
 a video is actually *about*. This extension embeds each title (and the channel name) with a small
 local language model and compares it against a semantic vector of your stated intent — so
-"distributed training benchmarks" and "how I scaled a 100-GPU cluster" both match "AI research,
-systems," even though they don't share a single keyword.
+"easy weeknight pasta" and "how I meal-prep dinner in 20 minutes" both match "cooking
+tutorials," even though they don't share a single keyword.
 
 Everything computes locally:
 

@@ -31,10 +31,10 @@ let profiles = [];
 let currentProfileId = null;
 
 const includeChips = createChipInput(document.getElementById("include-chips"), {
-  placeholder: "e.g. kubernetes, rust",
+  placeholder: "recipe, yoga",
 });
 const excludeChips = createChipInput(document.getElementById("exclude-chips"), {
-  placeholder: "e.g. football, drama",
+  placeholder: "gossip, prank",
 });
 
 function updateCounter(el, counterEl) {

@@ -20,8 +20,8 @@ export const DEFAULT_MODEL_TIER = "small";
 // retrieval-style tasks; passages are embedded as-is.
 export const BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: ";
 
-// Embedding models have no representation of negation ("no football" sits
-// right next to "football" in embedding space), so avoidance is a second,
+// Embedding models have no representation of negation ("no gossip" sits
+// right next to "gossip" in embedding space), so avoidance is a second,
 // separately embedded vector rather than text appended to the intent.
 // Weight for subtracting the avoid-intent similarity from the intent
 // similarity: score = cos(title, intent) - AVOID_LAMBDA * cos(title, avoid).
