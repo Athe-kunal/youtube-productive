@@ -1,7 +1,7 @@
 import { MSG, onMessage } from "../shared/messaging.js";
 import { cosineSimilarity } from "../shared/scoring.js";
 import { loadExtractor, embed, embedResilient } from "../lib/model-loader.js";
-import { BGE_QUERY_PREFIX, AVOID_LAMBDA, DEFAULT_MODEL_TIER } from "../shared/constants.js";
+import { MODEL_TIERS, AVOID_LAMBDA, DEFAULT_MODEL_TIER } from "../shared/constants.js";
 
 // Keyed by tier so switching back and forth doesn't re-download/re-init a
 // model that's already loaded — each tier gets its own memoized extractor.
@@ -72,8 +72,9 @@ async function ensureModel(tier) {
   return loadingPromises.get(tier);
 }
 
-async function scoreChunk(extractor, intentVector, avoidVector, videos) {
-  const vectors = await embedResilient(extractor, videos.map((v) => v.title));
+async function scoreChunk(extractor, intentVector, avoidVector, videos, tier) {
+  const passagePrefix = (MODEL_TIERS[tier] && MODEL_TIERS[tier].passagePrefix) || "";
+  const vectors = await embedResilient(extractor, videos.map((v) => passagePrefix + v.title));
   return videos
     .map((v, i) => {
       if (!vectors[i]) return null;
@@ -94,7 +95,7 @@ onMessage((type, payload, _sender, sendResponse) => {
 
   if (type === MSG.EMBED_INTENT) {
     ensureModel(tierOf(payload))
-      .then((e) => embed(e, [BGE_QUERY_PREFIX + payload.text]))
+      .then((e) => embed(e, [((MODEL_TIERS[tierOf(payload)] || {}).queryPrefix || "") + payload.text]))
       .then(([vector]) => sendResponse({ ok: true, vector }))
       .catch((err) => sendResponse({ ok: false, error: String(err) }));
     return true;
@@ -109,7 +110,7 @@ onMessage((type, payload, _sender, sendResponse) => {
     const tier = tierOf(payload);
     ensureModel(tier)
       .then(async (e) => {
-        const results = await scoreChunk(e, intentVector, avoidVector, videos);
+        const results = await scoreChunk(e, intentVector, avoidVector, videos, tier);
         const failedCount = videos.length - results.length;
         sendResponse({ ok: true, results, failedCount });
       })

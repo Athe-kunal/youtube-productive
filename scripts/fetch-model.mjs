@@ -1,12 +1,14 @@
 // Dev-time setup script (never shipped in the extension): downloads the
 // bundled embedding model files plus the onnxruntime-web WASM binaries into
 // models/, so the packaged extension runs fully offline. Run manually with
-// `npm run fetch-model`. Keep MODEL_ID in sync with MODEL_TIERS.small.id in
-// src/shared/constants.js.
+// `npm run fetch-model` (MODEL=bge-small | e5-small, default bge-small; see
+// src/shared/models.js).
 import fs from "node:fs/promises";
 import path from "node:path";
+import { MODELS, resolveModelKey } from "../src/shared/models.js";
 
-const MODEL_ID = "Xenova/bge-small-en-v1.5";
+const MODEL_KEY = resolveModelKey(process.env.MODEL);
+const MODEL_ID = MODELS[MODEL_KEY].id;
 const HF_BASE = `https://huggingface.co/${MODEL_ID}/resolve/main`;
 const MODEL_FILES = [
   "config.json",

@@ -10,7 +10,7 @@ import {
   setStats,
 } from "../shared/storage.js";
 import { recordStat } from "../shared/stats.js";
-import { STORAGE_KEYS, DEFAULT_MODEL_TIER } from "../shared/constants.js";
+import { STORAGE_KEYS, DEFAULT_MODEL_TIER, MODEL_TIERS } from "../shared/constants.js";
 import { computeCalibration } from "../shared/scoring.js";
 import { PROBE_TITLES } from "../shared/probe-titles.js";
 
@@ -106,6 +106,49 @@ async function reembedAndCalibrate({
   return { vector, avoidVector, version, calibration: fit ? { ...fit, version } : null };
 }
 
+// Stored intent/avoid vectors (and calibration + cached scores) only make
+// sense for the embedding model that produced them. When the bundled model
+// changes, re-embed every profile once so nothing compares vectors from two
+// different models.
+let migrationPromise = null;
+function migrateModelIfNeeded() {
+  if (!migrationPromise) {
+    migrationPromise = (async () => {
+      const wanted = MODEL_TIERS[DEFAULT_MODEL_TIER].id;
+      const stored = (await chrome.storage.local.get(STORAGE_KEYS.EMBEDDED_WITH))[STORAGE_KEYS.EMBEDDED_WITH];
+      if (stored === wanted) return;
+      const profiles = await getProfiles();
+      const migrated = [];
+      for (const profile of profiles) {
+        if (!profile.intentText && !profile.avoidText) {
+          migrated.push(profile);
+          continue;
+        }
+        const result = await reembedAndCalibrate({
+          intentText: profile.intentText,
+          avoidText: profile.avoidText,
+          tier: DEFAULT_MODEL_TIER,
+          prevVersion: profile.intentVersion,
+        });
+        await clearScoreCacheForProfile(profile.id);
+        migrated.push({
+          ...profile,
+          intentVector: result.vector,
+          avoidVector: result.avoidVector,
+          intentVersion: result.version,
+          calibration: result.calibration,
+        });
+      }
+      await setProfiles(migrated);
+      await chrome.storage.local.set({ [STORAGE_KEYS.EMBEDDED_WITH]: wanted });
+    })().catch(() => {
+      // Retry on the next worker start instead of caching the failure.
+      migrationPromise = null;
+    });
+  }
+  return migrationPromise;
+}
+
 // Keywords are matched lowercase (see shared/keyword-filter.js) — normalize
 // here too rather than only trusting the chip UI, so that invariant holds
 // regardless of caller.
@@ -129,6 +172,7 @@ onMessage((type, payload, sender, sendResponse) => {
     (async () => {
       try {
         await ensureOffscreenDocument();
+        await migrateModelIfNeeded();
         const [profiles, settings] = await Promise.all([getProfiles(), getSettings()]);
         const profile = profiles.find((p) => p.id === payload.profileId);
         if (!profile || !profile.intentVector) {
@@ -275,4 +319,11 @@ chrome.runtime.onInstalled.addListener((details) => {
   if (details.reason === "install") {
     chrome.runtime.openOptionsPage();
   }
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+  migrateModelIfNeeded();
+});
+chrome.runtime.onStartup.addListener(() => {
+  migrateModelIfNeeded();
 });

@@ -1,24 +1,14 @@
-// bge-small ranks topically-relevant-but-lexically-different titles (e.g.
-// "GPT-5 explained" for an "LLM" intent) above irrelevant ones more
-// reliably than MiniLM in practice — MiniLM leans heavily on literal word
-// overlap, which produces bad rankings for short keyword-style intents.
-// It ships bundled inside the extension (see scripts/fetch-model.mjs), so
+import { MODELS, DEFAULT_MODEL_KEY } from "./models.js";
+
+// The embedding model is chosen at build time (see shared/models.js and
+// build.mjs, which defines __MODEL_KEY__); outside a build — tests, scripts —
+// it falls back to the default. It ships bundled inside the extension, so
 // nothing is ever downloaded at runtime.
+export const MODEL_KEY = typeof __MODEL_KEY__ !== "undefined" ? __MODEL_KEY__ : DEFAULT_MODEL_KEY;
 export const MODEL_TIERS = {
-  small: {
-    id: "Xenova/bge-small-en-v1.5",
-    label: "Fast",
-    dim: 384,
-    remote: false,
-    threaded: false,
-    sizeLabel: "34 MB, bundled",
-  },
+  small: { ...MODELS[MODEL_KEY], remote: false, threaded: false },
 };
 export const DEFAULT_MODEL_TIER = "small";
-
-// BGE was trained with an instruction prefix on the query side for
-// retrieval-style tasks; passages are embedded as-is.
-export const BGE_QUERY_PREFIX = "Represent this sentence for searching relevant passages: ";
 
 // Embedding models have no representation of negation ("no gossip" sits
 // right next to "gossip" in embedding space), so avoidance is a second,
@@ -50,6 +40,9 @@ export const STORAGE_KEYS = {
   // there being one global set.
   PROFILES: "yif_profiles",
 
+  // Id of the embedding model the stored profile vectors were computed with.
+  // When it differs from the bundled model, vectors are re-embedded once.
+  EMBEDDED_WITH: "yif_embedded_with",
   // Which entry in MODEL_TIERS is active. Only "small" exists now; the key
   // is kept so an old install's stored value still resolves.
   MODEL_TIER: "yif_model_tier",

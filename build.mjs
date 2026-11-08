@@ -2,9 +2,12 @@ import * as esbuild from "esbuild";
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { MODELS, resolveModelKey } from "./src/shared/models.js";
 
 const watch = process.argv.includes("--watch");
 const outdir = "dist";
+// Which embedding model to bake in: MODEL=bge-small | e5-small (default bge-small).
+const modelKey = resolveModelKey(process.env.MODEL);
 
 async function clean() {
   await fs.rm(outdir, { recursive: true, force: true });
@@ -31,10 +34,20 @@ async function copyStatic() {
   if (existsSync("models")) {
     // Threaded WASM builds are never loaded (single-threaded only); skip any
     // left over in models/ from an older fetch so they don't bloat the package.
-    await fs.cp("models", path.join(outdir, "models"), {
-      recursive: true,
-      filter: (src) => !src.includes("-threaded"),
-    });
+    // Only the active model (MODEL_TIERS) + the WASM runtime ship; any other
+    // model left over in models/ from an earlier fetch is skipped.
+    const modelDirs = [path.join("models", MODELS[modelKey].id)];
+    if (!existsSync(modelDirs[0])) {
+      throw new Error(`Model "${modelKey}" is not in models/. Run: make fetch-model MODEL=${modelKey}`);
+    }
+    const keep = (src) => {
+      if (src === "models") return true;
+      if (src === path.join("models", "wasm") || src.startsWith(path.join("models", "wasm") + path.sep)) {
+        return !src.includes("-threaded");
+      }
+      return modelDirs.some((d) => src === d || src.startsWith(d + path.sep) || d.startsWith(src + path.sep));
+    };
+    await fs.cp("models", path.join(outdir, "models"), { recursive: true, filter: keep });
   }
 }
 
@@ -92,6 +105,7 @@ async function build() {
         outfile: path.join(outdir, `${entry.out}.js`),
         bundle: true,
         plugins: [stripHubHosts],
+        define: { __MODEL_KEY__: JSON.stringify(modelKey) },
         format: entry.format,
         target: "chrome109",
         logLevel: "info",
@@ -105,7 +119,7 @@ async function build() {
   } else {
     await Promise.all(contexts.map((ctx) => ctx.rebuild()));
     await Promise.all(contexts.map((ctx) => ctx.dispose()));
-    console.log("Build complete.");
+    console.log(`Build complete (model: ${modelKey}).`);
   }
 }
 

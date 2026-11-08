@@ -1,5 +1,11 @@
 .PHONY: regenerate-dist test fetch-model release
 
+# Which embedding model gets bundled: MODEL=bge-small (default) or
+# MODEL=e5-small (multilingual). Works with regenerate-dist, fetch-model and
+# release, e.g.:  make release MODEL=e5-small VERSION=0.1.5
+# The model must be in models/ first (make fetch-model MODEL=...).
+export MODEL
+
 # Rebuilds dist/ from current source. After running this, reload the
 # extension at chrome://extensions AND hard-refresh any open YouTube tabs —
 # reloading the extension alone does not update JS/CSS already injected
@@ -16,9 +22,9 @@ fetch-model:
 # Builds a fresh dist/ and zips its *contents* (not the folder itself) into
 # release.zip at the repo root — this is the file to upload to the Chrome
 # Web Store dashboard. Includes the bundled model + WASM runtime, so it's
-# tens of MB; that's expected for an offline-first extension.
+# about 90 MB zipped; that's expected for an offline-first extension.
 #
-# Pass VERSION to bump manifest.json + package.json before building, e.g.:
+# Pass MODEL to choose the bundled model (see above) and VERSION to bump manifest.json + package.json before building, e.g.:
 #   make release VERSION=0.1.1
 release:
 ifdef VERSION
@@ -28,4 +34,4 @@ endif
 	$(MAKE) regenerate-dist
 	rm -f release.zip
 	cd dist && zip -r -X ../release.zip . -x ".*"
-	@echo "release.zip ready: $$(du -h release.zip | cut -f1)"
+	@echo "release.zip ready: $$(du -h release.zip | cut -f1) (model: $(if $(MODEL),$(MODEL),bge-small))"

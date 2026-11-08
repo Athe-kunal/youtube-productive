@@ -16,7 +16,7 @@ The following data is stored locally in your browser only:
 All data remains on your device and is never sent to external servers.
 
 ## Model
-The embedding model (~34 MB) is bundled inside the extension package. The extension makes no
+The embedding model (~135 MB) is bundled inside the extension package. The extension makes no
 network requests of its own and only has access to youtube.com pages; all inference runs locally.
 
 ## Contact

@@ -9,6 +9,7 @@ test("MODEL_TIERS: only the bundled small tier exists, and it is local", () => {
   assert.equal(typeof config.dim, "number");
   assert.equal(config.remote, false);
   assert.equal(config.threaded, false);
+  assert.equal(config.id, "Xenova/bge-small-en-v1.5");
 });
 
 test("DEFAULT_MODEL_TIER points at a real tier", () => {

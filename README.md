@@ -22,7 +22,7 @@ tutorials," even though they don't share a single keyword.
 Everything computes locally:
 
 - No servers, no telemetry, no account.
-- The model (~34 MB, quantized) ships inside the extension package — nothing is downloaded at
+- The multilingual model (~135 MB, quantized) ships inside the extension package — nothing is downloaded at
   runtime, and the extension only requests access to youtube.com.
 - Your intent text, its embedding, and your settings live in `chrome.storage.local` and never
   leave your machine.
@@ -62,6 +62,14 @@ cd youtube-productive
 npm install
 npm run fetch-model   # downloads the bundled embedding model + WASM runtime into models/
 npm run build          # bundles everything into dist/
+```
+
+Pick the bundled embedding model with `MODEL` (default `bge-small`, English, ~34 MB; or
+`e5-small`, multilingual, ~135 MB). Only the chosen model ends up in `dist/` and `release.zip`:
+
+```bash
+make fetch-model MODEL=e5-small
+make release MODEL=e5-small VERSION=0.1.5   # VERSION is optional
 ```
 
 Then in Chrome/Edge:
