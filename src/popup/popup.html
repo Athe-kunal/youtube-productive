@@ -114,12 +114,29 @@
         <p class="hint" id="hardcore-status"></p>
         <div id="breathe" class="breathe" hidden>
           <div class="orb-stage" aria-hidden="true">
-            <div class="orb-glow"></div>
-            <div class="orb"></div>
+            <svg class="ring" viewBox="0 0 200 200">
+              <defs>
+                <filter id="ring-rough" x="-25%" y="-25%" width="150%" height="150%">
+                  <feTurbulence type="fractalNoise" baseFrequency="0.03" numOctaves="2" seed="4" result="noise">
+                    <animate attributeName="baseFrequency" dur="9s" values="0.028;0.048;0.028" repeatCount="indefinite" />
+                  </feTurbulence>
+                  <feDisplacementMap in="SourceGraphic" in2="noise" scale="9" />
+                </filter>
+                <filter id="ring-glow" x="-40%" y="-40%" width="180%" height="180%">
+                  <feGaussianBlur stdDeviation="5" />
+                </filter>
+              </defs>
+              <circle class="ring-fill" cx="100" cy="100" r="60" />
+              <circle class="ring-halo" cx="100" cy="100" r="60" filter="url(#ring-glow)" />
+              <circle class="ring-line" cx="100" cy="100" r="60" filter="url(#ring-rough)" />
+            </svg>
           </div>
           <p class="breathe-phase" id="breathe-phase" role="status" aria-live="polite"></p>
-          <p class="breathe-time" id="breathe-time"></p>
-          <button id="breathe-cancel" type="button" class="btn-secondary">Cancel</button>
+          <div class="wait-pill" aria-hidden="true">
+            <span class="wait-fill" id="breathe-fill"></span>
+            <span class="wait-text" id="breathe-time"></span>
+          </div>
+          <button id="breathe-cancel" type="button" class="breathe-skip">Nevermind</button>
         </div>
       </section>
 
@@ -130,6 +147,7 @@
         </div>
         <p class="stats-line" id="today-stats" role="status"></p>
         <p id="empty-state" class="muted">Loading…</p>
+        <button id="hide-now-btn" type="button" class="btn-secondary btn-block" hidden>Hide hidden videos now</button>
         <div id="reveal-gate" hidden>
           <button id="reveal-btn" type="button" class="btn-secondary btn-block">Show hidden videos</button>
         </div>

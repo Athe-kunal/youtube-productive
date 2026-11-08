@@ -85,10 +85,9 @@ const BREATHE_CYCLE_MS = 10000; // 4s in + 6s out; matches the CSS animation
 const breatheEl = document.getElementById("breathe");
 const breathePhaseEl = document.getElementById("breathe-phase");
 const breatheTimeEl = document.getElementById("breathe-time");
+const breatheFillEl = document.getElementById("breathe-fill");
+const hideNowBtnEl = document.getElementById("hide-now-btn");
 
-function formatClock(seconds) {
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
-}
 // { endsAt, startedAt, onDone, timer } while a session runs.
 let breathe = null;
 
@@ -100,6 +99,13 @@ function startBreathe(host, beforeNode, onDone) {
   // Shown in place — inside whichever card started it — not at the top.
   host.insertBefore(breatheEl, beforeNode);
   breatheEl.hidden = false;
+  // One linear CSS transition for the whole wait, so the fill moves
+  // smoothly instead of stepping with the 250ms text tick.
+  breatheFillEl.style.transition = "none";
+  breatheFillEl.style.width = "0%";
+  void breatheFillEl.offsetWidth;
+  breatheFillEl.style.transition = `width ${seconds}s linear`;
+  breatheFillEl.style.width = "100%";
   breatheEl.classList.add("is-running");
   breatheEl.scrollIntoView({ block: "nearest", behavior: "smooth" });
   renderHardcore();
@@ -117,8 +123,8 @@ function tickBreathe() {
     return;
   }
   const inhaling = (now - breathe.startedAt) % BREATHE_CYCLE_MS < BREATHE_IN_MS;
-  breatheTimeEl.textContent = formatClock(Math.ceil((breathe.endsAt - now) / 1000));
-  breathePhaseEl.textContent = inhaling ? "Breathe in" : "Breathe out";
+  breatheTimeEl.textContent = `Wait for ${Math.ceil((breathe.endsAt - now) / 1000)}s`;
+  breathePhaseEl.textContent = inhaling ? "Breathe In" : "Breathe Out";
   breatheEl.classList.toggle("is-in", inhaling);
   breatheEl.classList.toggle("is-out", !inhaling);
   breathe.timer = setTimeout(tickBreathe, 250);
@@ -324,10 +330,22 @@ function startReveal() {
   });
 }
 
+hideNowBtnEl.addEventListener("click", async () => {
+  hideNowBtnEl.disabled = true;
+  try {
+    await chrome.tabs.sendMessage(currentTabId, { type: MSG.LOCK_HARDCORE });
+  } catch {
+    // Tab went away; loadFiltered below explains what to do.
+  }
+  hideNowBtnEl.disabled = false;
+  await loadFiltered();
+});
+
 function showLockedGate() {
   listEl.innerHTML = "";
   emptyState.style.display = "none";
   revealGateEl.hidden = !!breathe;
+  hideNowBtnEl.hidden = true;
 }
 
 revealBtnEl.addEventListener("click", startReveal);
@@ -425,6 +443,7 @@ async function loadFiltered() {
     return;
   }
   revealGateEl.hidden = true;
+  hideNowBtnEl.hidden = !(response.hardcore && response.revealUntil > Date.now());
 
   if (response.dimmed.length === 0) {
     listEl.innerHTML = "";

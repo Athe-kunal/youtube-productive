@@ -719,6 +719,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message && message.type === MSG.LOCK_HARDCORE) {
+    revealUntil = 0;
+    clearTimeout(revealTimer);
+    manualShows.clear();
+    reapplyFromCache();
+    scheduleFilterStateBroadcast();
+    sendResponse({ ok: true });
+    return true;
+  }
+
   if (message && message.type === MSG.UNHIDE_VIDEO) {
     if (isLocked()) {
       sendResponse({ ok: false, hardcore: true });
