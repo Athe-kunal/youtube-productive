@@ -28,7 +28,13 @@
       </button>
     </header>
 
+    <nav class="tabs" role="tablist" aria-label="Popup sections">
+      <button type="button" role="tab" id="tab-hidden" class="tab is-active" data-tab="hidden" aria-selected="true" aria-controls="panel-hidden">Hidden videos</button>
+      <button type="button" role="tab" id="tab-profile" class="tab" data-tab="profile" aria-selected="false" aria-controls="panel-profile">Profile</button>
+    </nav>
+
     <div id="body">
+      <div id="panel-profile" class="panel" role="tabpanel" aria-labelledby="tab-profile" hidden>
       <section id="settings-section" class="card">
         <div class="field">
           <label for="profile-select">Profile</label>
@@ -102,7 +108,9 @@
         </div>
         <p class="hint footnote">Add, rename, or delete profiles in full settings.</p>
       </section>
+      </div>
 
+      <div id="panel-hidden" class="panel" role="tabpanel" aria-labelledby="tab-hidden">
       <section id="hardcore-section" class="card card-hardcore" hidden>
         <label class="switch-row card-heading">
           <span class="heading-label">
@@ -153,6 +161,7 @@
         </div>
         <ul id="list"></ul>
       </section>
+      </div>
     </div>
     <script type="module" src="popup.js"></script>
   </body>

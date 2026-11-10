@@ -1,10 +1,10 @@
 /**
  * Sequential spotlight tour: dims the page, draws a highlight box around
  * each step's target element in turn, and shows a one-line tooltip with
- * Back/Next/Skip. Steps whose selector doesn't resolve (layout variance,
+ * Back/Next/Skip; Escape skips it. Steps whose selector doesn't resolve (layout variance,
  * a hidden section) are skipped rather than breaking the tour.
  */
-export function startTour(steps, { onFinish } = {}) {
+export function startTour(steps, { onFinish, fixed = false } = {}) {
   let index = 0;
 
   const backdrop = document.createElement("div");
@@ -47,6 +47,15 @@ export function startTour(steps, { onFinish } = {}) {
     highlight.remove();
     tooltip.remove();
     window.removeEventListener("resize", render);
+    document.removeEventListener("keydown", onKeydown, true);
+  }
+
+  function onKeydown(event) {
+    if (event.key !== "Escape") return;
+    // Skip the tour only — don't let Escape also close the host popup/page.
+    event.preventDefault();
+    event.stopPropagation();
+    finish();
   }
 
   function finish() {
@@ -57,16 +66,25 @@ export function startTour(steps, { onFinish } = {}) {
   function position(target) {
     const rect = target.getBoundingClientRect();
     const pad = 6;
-    highlight.style.top = `${rect.top - pad + window.scrollY}px`;
-    highlight.style.left = `${rect.left - pad + window.scrollX}px`;
+    // `fixed` mode (popup, whose content scrolls inside a container rather
+    // than the window) uses viewport coordinates, with no scroll offset.
+    const sx = fixed ? 0 : window.scrollX;
+    const sy = fixed ? 0 : window.scrollY;
+    highlight.style.top = `${rect.top - pad + sy}px`;
+    highlight.style.left = `${rect.left - pad + sx}px`;
     highlight.style.width = `${rect.width + pad * 2}px`;
     highlight.style.height = `${rect.height + pad * 2}px`;
 
-    tooltip.style.top = `${rect.bottom + window.scrollY + 10}px`;
+    let top = rect.bottom + 10;
+    // Flip above the target when there is no room below it.
+    if (fixed && top + tooltip.offsetHeight > window.innerHeight - 8) {
+      top = Math.max(8, rect.top - tooltip.offsetHeight - 10);
+    }
+    tooltip.style.top = `${top + sy}px`;
     // Keep the tooltip inside the viewport — targets near the right edge
     // (e.g. the master switch) would otherwise push it off-screen.
     const maxLeft = document.documentElement.clientWidth - tooltip.offsetWidth - 12;
-    tooltip.style.left = `${Math.max(12, Math.min(rect.left, maxLeft)) + window.scrollX}px`;
+    tooltip.style.left = `${Math.max(12, Math.min(rect.left, maxLeft)) + sx}px`;
   }
 
   function render() {
@@ -82,7 +100,8 @@ export function startTour(steps, { onFinish } = {}) {
       return;
     }
 
-    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    // Instant in fixed mode so the highlight measures the final position.
+    target.scrollIntoView({ block: "center", behavior: fixed ? "auto" : "smooth" });
     requestAnimationFrame(() => position(target));
 
     stepEl.textContent = `${index + 1} / ${steps.length}`;
@@ -103,6 +122,7 @@ export function startTour(steps, { onFinish } = {}) {
     render();
   });
   window.addEventListener("resize", render);
+  document.addEventListener("keydown", onKeydown, true);
 
   document.body.append(backdrop, highlight, tooltip);
   render();
