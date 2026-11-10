@@ -55,6 +55,8 @@ export const STORAGE_KEYS = {
   EXTENSION_ENABLED: "yif_extension_enabled",
   // Whether the first-install settings tour has been shown/skipped.
   TOUR_SEEN: "yif_tour_seen",
+  // Whether the popup's profile tour has been shown/skipped.
+  POPUP_TOUR_SEEN: "yif_popup_tour_seen",
   // { "YYYY-MM-DD": { unhides, filtered } } — see shared/stats.js. Written
   // only by the background service worker (RECORD_STAT) so concurrent
   // YouTube tabs can't clobber each other's read-modify-write.
