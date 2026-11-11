@@ -6,7 +6,6 @@ import {
   pickActiveProfile,
   hardcoreRevealDelaySeconds,
 } from "../shared/profiles.js";
-import { startTour } from "../shared/tour.js";
 import { getSettings, setSettings } from "../shared/storage.js";
 import { STORAGE_KEYS, DEFAULT_SCHEDULE } from "../shared/constants.js";
 
@@ -53,35 +52,6 @@ for (const btn of tabButtons) btn.addEventListener("click", () => selectTab(btn.
   }
   selectTab(saved === "profile" ? "profile" : "hidden");
 }
-
-// ---- Profile tour: starts the first time the user types in the profile
-// tab; Escape (or Skip tour) dismisses it, and it never shows again. ----
-const POPUP_TOUR_STEPS = [
-  { selector: "#profile-select", text: "Profiles — each has its own intent and active hours. Add or rename them in full settings." },
-  { selector: "#intent", text: "Show me — describe what you want to see, in your own words." },
-  { selector: "#avoid", text: "Avoid — what you'd rather not see. Keep it out of \"Show me\"." },
-  { selector: "#include-chips", text: "Always show — exact keywords that force a video to show." },
-  { selector: "#exclude-chips", text: "Always hide — exact keywords that force a video to hide." },
-  { selector: "#schedule-enabled", text: "Active hours — optionally only use this profile at set times." },
-  { selector: "#save", text: "Apply — saves the profile and re-filters the page. Press Esc anytime to skip this tour." },
-];
-let tourStarted = false;
-async function maybeStartTour() {
-  if (tourStarted) return;
-  tourStarted = true;
-  try {
-    const settings = await getSettings();
-    if (settings[STORAGE_KEYS.POPUP_TOUR_SEEN]) return;
-  } catch {
-    return;
-  }
-  document.activeElement && document.activeElement.blur();
-  startTour(POPUP_TOUR_STEPS, {
-    fixed: true,
-    onFinish: () => setSettings({ [STORAGE_KEYS.POPUP_TOUR_SEEN]: true }),
-  });
-}
-for (const el of [intentEl, avoidEl]) el.addEventListener("input", maybeStartTour, { once: true });
 
 let currentTabId = null;
 let profiles = [];
